@@ -103,8 +103,20 @@ module gpt_dpsk_async_fifo_fwft #(
           rd_ptr_gray_sync2_wr[PTR_WIDTH-3:0]});
 
     wire wr_almost_full_comb;
-    assign wr_almost_full_comb =
-        ((DEPTH - wr_cnt_int) <= ALMOST_FULL_THRESH);
+//    assign wr_almost_full_comb =
+//        ((DEPTH - wr_cnt_int) <= ALMOST_FULL_THRESH);
+    // lookahead pointer (на K вперёд)
+wire [PTR_WIDTH-1:0] wr_ptr_bin_af;
+wire [PTR_WIDTH-1:0] wr_ptr_gray_af;
+
+assign wr_ptr_bin_af  = wr_ptr_bin + ALMOST_FULL_THRESH;
+assign wr_ptr_gray_af = bin2gray(wr_ptr_bin_af);
+
+// almost_full через ту же логику, что и full
+assign wr_almost_full_comb =
+    (wr_ptr_gray_af ==
+    {~rd_ptr_gray_sync2_wr[PTR_WIDTH-1:PTR_WIDTH-2],
+     rd_ptr_gray_sync2_wr[PTR_WIDTH-3:0]});
 
     always @(posedge wr_clk or posedge wr_rst) begin
         if (wr_rst) begin
