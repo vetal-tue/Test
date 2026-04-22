@@ -103,11 +103,21 @@ wire [PTR_W:0] wr_ptr_bin_next  = wr_ptr_bin + 1;
 wire [PTR_W:0] wr_ptr_gray_next = bin2gray(wr_ptr_bin_next);
 
 // FULL (combinational internal)
+// Это условие FULL проверяет состояние ПОСЛЕ следующей записи
+// wr_full_int говорит:
+// "если я СЕЙЧАС запишу → достигну состояния, где FIFO станет полным"
 wire wr_full_int =
     (wr_ptr_gray_next == {
         ~rd_ptr_gray_sync[PTR_W:PTR_W-1],
          rd_ptr_gray_sync[PTR_W-2:0]
     });
+// это эквивалент:
+// wr_ptr_bin_next == rd_ptr_bin + DEPTH
+
+// Почему инверсия 2 бит?
+// Потому что:
+// * Gray код меняет 1 бит за шаг
+// * при переходе через половину кольца меняются 2 старших бита
 
 // occupancy (combinational)
 wire [PTR_W:0] wr_cnt_raw = wr_ptr_bin - rd_ptr_bin_sync_r;
