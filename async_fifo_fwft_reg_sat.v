@@ -197,7 +197,10 @@ wire [PTR_W:0] rd_cnt_sat =
     rd_cnt_total;
 
 // almost empty
-wire rd_almost_empty_int = (rd_cnt_sat <= ALMOST_EMPTY_THRESH);
+// wire rd_almost_empty_int = (rd_cnt_sat <= ALMOST_EMPTY_THRESH);
+
+wire [PTR_W:0] rd_cnt_next = rd_cnt_sat - (rd_valid && rd_en ? 1 : 0);
+wire rd_almost_empty_int = (rd_cnt_next <= ALMOST_EMPTY_THRESH);
 
 
 // =========================
@@ -219,6 +222,7 @@ always @(posedge rd_clk) begin
         rd_ptr_bin  <= 0;
         rd_ptr_gray <= 0;
         rd_valid    <= 0;
+        // rd_empty    <= 1'b1; // 23.04.2026
     end else begin
 
         if (!rd_valid && !mem_empty) begin
@@ -226,6 +230,7 @@ always @(posedge rd_clk) begin
             rd_ptr_bin  <= rd_ptr_bin_next;
             rd_ptr_gray <= rd_ptr_gray_next;
             rd_valid    <= 1;
+            // rd_empty    <= 1'b0; // 23.04.2026
         end
         else if (rd_en && rd_valid) begin
             if (!mem_empty) begin
@@ -233,13 +238,17 @@ always @(posedge rd_clk) begin
                 rd_ptr_bin  <= rd_ptr_bin_next;
                 rd_ptr_gray <= rd_ptr_gray_next;
                 rd_valid    <= 1;
+                // rd_empty    <= 1'b0; // 23.04.2026
             end else begin
                 rd_valid <= 0;
+                // rd_empty <= 1'b1; // 23.04.2026
             end
         end
 
     end
 end
+
+wire will_empty = rd_valid && rd_en && mem_empty; // 23.04.2026
 
 // registered outputs
 always @(posedge rd_clk) begin
@@ -248,9 +257,11 @@ always @(posedge rd_clk) begin
         rd_almost_empty <= 1'b1;
         rd_cnt          <= 0;
     end else begin
-        rd_empty        <= !rd_valid;
+        // rd_empty        <= !rd_valid;
+        rd_empty <= !rd_valid || will_empty; // 23.04.2026
         rd_almost_empty <= rd_almost_empty_int;
-        rd_cnt          <= rd_cnt_sat;
+        // rd_cnt          <= rd_cnt_sat;
+        rd_cnt          <= rd_cnt_next;
     end
 end
 
