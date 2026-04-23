@@ -119,26 +119,34 @@ wire wr_full_int =
 // * Gray код меняет 1 бит за шаг
 // * при переходе через половину кольца меняются 2 старших бита
 
-// occupancy (combinational)
+// current occupancy (combinational)
 wire [PTR_W:0] wr_cnt_raw = wr_ptr_bin - rd_ptr_bin_sync_r;
 wire [PTR_W:0] wr_cnt_total = wr_cnt_raw + rd_valid_wr;
 
 // saturation
-wire [PTR_W:0] wr_cnt_sat =
-    // (wr_cnt_raw > DEPTH) ? DEPTH :
-    // wr_cnt_raw;
-    (wr_cnt_total > DEPTH) ? DEPTH :
-    wr_cnt_total;
+wire [PTR_W:0] wr_cnt_sat = (wr_cnt_total > DEPTH) ? DEPTH : wr_cnt_total;
 
-// almost
-wire wr_almost_full_int = (wr_cnt_sat >= ALMOST_FULL_THRESH);
+// look-ahead
+wire wr_push = wr_en && !wr_full_int;
+wire [PTR_W:0] wr_cnt_next = wr_cnt_sat + (wr_push ? 1 : 0);
+wire [PTR_W:0] wr_cnt_next_sat = (wr_cnt_next > DEPTH) ? DEPTH : wr_cnt_next;
+
+// almost full NEXT !
+wire wr_almost_full_next = (wr_cnt_next_sat >= ALMOST_FULL_THRESH);
+
+// статусный full
+wire wr_full_next = (wr_cnt_next_sat == DEPTH);
+
+// // almost full CURRENT !
+// wire wr_almost_full_int = (wr_cnt_sat >= ALMOST_FULL_THRESH);
 
 // write
 always @(posedge wr_clk) begin
     if (wr_rst) begin
         wr_ptr_bin  <= 0;
         wr_ptr_gray <= 0;
-    end else if (wr_en && !wr_full_int) begin
+    // end else if (wr_en && !wr_full_int) begin
+    end else if (wr_push) begin
         mem[wr_ptr_bin[ADDR_W-1:0]] <= wr_data;
         wr_ptr_bin  <= wr_ptr_bin_next;
         wr_ptr_gray <= wr_ptr_gray_next;
@@ -152,9 +160,12 @@ always @(posedge wr_clk) begin
         wr_almost_full <= 1'b0;
         wr_cnt         <= 0;
     end else begin
-        wr_full        <= wr_full_int;
-        wr_almost_full <= wr_almost_full_int;
-        wr_cnt         <= wr_cnt_sat;
+        // wr_full        <= wr_full_int;
+        // wr_almost_full <= wr_almost_full_int;
+        // wr_cnt         <= wr_cnt_sat;
+        wr_full        <= wr_full_next;
+        wr_almost_full <= wr_almost_full_next;
+        wr_cnt         <= wr_cnt_next_sat;
     end
 end
 
@@ -189,19 +200,19 @@ wire mem_empty = (rd_ptr_gray == wr_ptr_gray_sync);
 wire [PTR_W:0] rd_cnt_raw = wr_ptr_bin_sync_r - rd_ptr_bin;
 wire [PTR_W:0] rd_cnt_total = rd_cnt_raw + rd_valid;
 
-// saturation
-wire [PTR_W:0] rd_cnt_sat =
-    // (rd_cnt_raw > DEPTH) ? DEPTH :
-    // rd_cnt_raw;
-    (rd_cnt_total > DEPTH) ? DEPTH :
-    rd_cnt_total;
+// saturation ( rd_cnt_sat = min(rd_cnt_total, DEPTH) )
+wire [PTR_W:0] rd_cnt_sat = (rd_cnt_total > DEPTH) ? DEPTH : rd_cnt_total;
 
 // almost empty
 // wire rd_almost_empty_int = (rd_cnt_sat <= ALMOST_EMPTY_THRESH);
 
-wire [PTR_W:0] rd_cnt_next = rd_cnt_sat - (rd_valid && rd_en ? 1 : 0);
-wire rd_almost_empty_int = (rd_cnt_next <= ALMOST_EMPTY_THRESH);
+// wire [PTR_W:0] rd_cnt_next = rd_cnt_sat - (rd_valid && rd_en ? 1 : 0);
 
+// Чтобы не уйти в underflow:
+wire [PTR_W:0] rd_cnt_next =
+    (rd_cnt_sat > 0 && rd_valid && rd_en) ? (rd_cnt_sat - 1) : rd_cnt_sat;
+
+wire rd_almost_empty_int = (rd_cnt_next <= ALMOST_EMPTY_THRESH);
 
 // =========================
 // FWFT datapath
