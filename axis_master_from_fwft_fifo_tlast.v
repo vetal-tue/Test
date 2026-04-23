@@ -39,12 +39,18 @@ module axis_master_from_fwft_fifo_tlast #
     // Control
     // ============================================================
 
+    // AXI handshake:
     wire take1 = v1 && m_axis_tready;
-    wire move  = !v1 || take1;
-    wire take0 = v0 && move;
 
-    wire use_cnt_now = (cnt_words == N-1);
-    
+    // stage1 can move if empty or being consumed:
+    wire move  = !v1 || take1; // stage1 can accept data
+
+    // stage0 gives data when it has valid and stage1 can accept:
+    wire take0 = v0 && move; // stage0 -> stage1 transfer
+
+
+
+    wire insert_pkt_cnt_now = (cnt_words == N-1);
     // ============================================================
     // Stage 1
     // ============================================================
@@ -73,7 +79,7 @@ module axis_master_from_fwft_fifo_tlast #
         end else if (!v0 || take0) begin
 
             // приоритет: вставка pkt_cnt после N FIFO слов
-            if (v0 && use_cnt_now && take0) begin
+            if (v0 && insert_pkt_cnt_now && take0) begin
                 // вставляем счетчик
                 v0    <= 1'b1;
                 d0    <= pkt_cnt;
@@ -101,7 +107,7 @@ module axis_master_from_fwft_fifo_tlast #
             pkt_cnt   <= 0;
         end else if (take0) begin
 
-            if (v0 && use_cnt_now) begin
+            if (v0 && insert_pkt_cnt_now) begin
                 // только что отправили N-е FIFO слово
                 cnt_words <= 0;
                 pkt_cnt   <= pkt_cnt + 1;
@@ -113,66 +119,6 @@ module axis_master_from_fwft_fifo_tlast #
         end
     end
 
-    // always @(posedge clk or posedge rst) begin
-    //     if (rst) begin
-    //         v0 <= 0;
-    //         v1 <= 0;
-    //         last0 <= 0;
-    //         last1 <= 0;
-
-    //         cnt_words <= 0;
-    //         pkt_cnt <= 0;
-    //         // sending_cnt_phase <= 0;
-    //     end else begin
-
-    //         // -------------------------
-    //         // Stage 1
-    //         // -------------------------
-    //         if (move) begin
-    //             v1    <= v0;
-    //             d1    <= d0;
-    //             last1 <= last0;
-    //         end
-
-    //         // -------------------------
-    //         // Stage 0 (data selection)
-    //         // -------------------------
-    //         if (!v0 || take0) begin
-    //             // if (sending_cnt_phase) begin
-    //             if (use_cnt_now) begin
-    //                 // insert pkt_cnt
-    //                 v0    <= 1'b1;
-    //                 d0    <= pkt_cnt;
-    //                 last0 <= 1'b1;
-    //             end else if (!fifo_empty) begin
-    //                 // insert fifo_data
-    //                 v0    <= 1'b1;
-    //                 d0    <= fifo_data;
-    //                 last0 <= 1'b0;
-    //             end else begin
-    //                 v0 <= 1'b0;
-    //             end
-    //         end
-
-    //         // -------------------------
-    //         // Counters update
-    //         // -------------------------
-    //         if (take0) begin
-
-    //             if (use_cnt_now) begin
-    //                 // sending_cnt_phase <= 1'b0;
-    //                 cnt_words <= 0;
-    //                 pkt_cnt   <= pkt_cnt + 1;
-    //                 end else begin
-    //                     cnt_words <= cnt_words + 1;
-    //                     // cnt_words <= cnt_next;
-    //                 end
-    //                 // cnt_words <= cnt_next;
-    //             end
-    //         end
-    //     // end
-    // end
-
     // ============================================================
     // FIFO read
     // ============================================================
@@ -180,8 +126,8 @@ module axis_master_from_fwft_fifo_tlast #
     assign fifo_rd_en =
         (!v0 || take0) &&
         !fifo_empty &&
-        !(v0 && use_cnt_now); // не читаем, если сейчас последний FIFO
-        // !use_cnt_now;
+        !(v0 && insert_pkt_cnt_now); // не читаем, если сейчас последний FIFO
+
 
     // ============================================================
     // AXIS
