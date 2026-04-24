@@ -1,4 +1,4 @@
-module sync_fifo_fwft_reg_pow2 # 
+module sync_fifo_fwft_reg_pow2 #
 (
     parameter DATA_W = 16,
     parameter ADDR_W = 4,
@@ -7,155 +7,113 @@ module sync_fifo_fwft_reg_pow2 #
     parameter ALMOST_EMPTY_THRESH = 1
 )
 (
-    input                  clk,
-    input                  rst, 
+    input                     clk,
+    input                     rst, 
 
     // write side
-    input                  wr_en,
-    input  [DATA_W-1:0]    wr_data,
-    output reg             wr_full,
-    output reg             wr_almost_full,
+    input                     wr_en,
+    input      [DATA_W-1:0]   wr_data,
+    output reg                wr_full,
+    output reg                wr_almost_full,
 
-    output reg [ADDR_W:0]  usedw, 
+    output reg [ADDR_W:0]     usedw, 
 
     // read side
-    input                  rd_en,
-    output [DATA_W-1:0]    rd_data,
-    output reg             rd_empty,
-    output reg             rd_almost_empty
+    input                     rd_en,
+    output reg [DATA_W-1:0]   rd_data,
+    output reg                rd_empty,
+    output reg                rd_almost_empty 
 );
 
-    localparam DEPTH = (1 << ADDR_W);
+    // =========================================================================
+    // Внутренние сигналы и память
+    // =========================================================================
+    
+    // Массив памяти (инструменты синтеза распознают это как BRAM)
+    reg [DATA_W-1:0] mem [0:(1<<ADDR_W)-1];
 
-    // -------------------------------------------------
-    // RAM (true dual-port style inference)
-    // -------------------------------------------------
-    (* ram_style = "block" *)
-    reg [DATA_W-1:0] mem [0:DEPTH-1];
+    // Указатели RAM (на 1 бит шире для удобства вычислений и отладки, 
+    // хотя физически RAM никогда не заполнится на все 1<<ADDR_W слов, 
+    // так как одно слово всегда "выпадает" в регистр rd_data)
+    reg [ADDR_W:0] wr_ptr;
+    reg [ADDR_W:0] rd_ptr;
 
-    reg [ADDR_W-1:0] wr_ptr;
-    reg [ADDR_W-1:0] rd_ptr;
-
-    reg [DATA_W-1:0] mem_rd_data;
-
-    // синхронное чтение (важно для BRAM)
-    always @(posedge clk) begin
-        mem_rd_data <= mem[rd_ptr];
-    end
-
-    // запись
-    always @(posedge clk) begin
-        if (wr_en && !wr_full)
-            mem[wr_ptr] <= wr_data;
-    end
-
-    // -------------------------------------------------
-    // выходной регистр (FWFT)
-    // -------------------------------------------------
-    reg [DATA_W-1:0] rd_data_reg;
-    reg              rd_valid;
-
-    assign rd_data = rd_data_reg;
-
-    // -------------------------------------------------
-    // счетчик RAM (без выходного регистра)
-    // -------------------------------------------------
-    reg [ADDR_W:0] ram_cnt;
-
-    wire ram_empty = (ram_cnt == 0);
-    wire ram_full  = (ram_cnt == DEPTH);
-
-    // -------------------------------------------------
-    // управляющие сигналы
-    // -------------------------------------------------
-
-    // нужно ли загрузить регистр из RAM
-    wire need_load =
-        (!rd_valid && !ram_empty) ||   // initial FWFT
-        (rd_en && rd_valid && !ram_empty); // refill после чтения
-
-    // будет ли чтение из RAM
-    wire rd_from_ram = need_load;
-
-    // -------------------------------------------------
-    // next state для счетчиков
-    // -------------------------------------------------
+    // Внутренние флаги успешных транзакций
     wire do_write = wr_en && !wr_full;
-    wire do_read  = rd_en && rd_valid;
+    wire do_read  = rd_en && !rd_empty;
 
-    // RAM count update
-    wire [ADDR_W:0] ram_cnt_next =
-        ram_cnt + (do_write ? 1 : 0)
-                - (rd_from_ram ? 1 : 0);
+    // Состояние RAM и логика prefetch
+    wire ram_empty = (wr_ptr == rd_ptr);
+    
+    // Мы читаем из RAM, если там есть данные И (выходной регистр пуст ИЛИ мы прямо сейчас его читаем)
+    wire rd_data_valid = !rd_empty;
+    wire ram_rd_en = !ram_empty && (!rd_data_valid || do_read);
 
-    // valid бит регистра
-    wire rd_valid_next =
-        (rd_valid && !do_read) ||   // держим
-        (need_load);               // загрузка
+    // Следующее состояние счетчика usedw
+    reg [ADDR_W:0] usedw_next;
 
-    // usedw включает регистр
-    wire [ADDR_W:0] usedw_next =
-        ram_cnt_next + (rd_valid_next ? 1 : 0);
-
-    // -------------------------------------------------
-    // pointers
-    // -------------------------------------------------
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
-            wr_ptr <= 0;
-            rd_ptr <= 0;
-        end else begin
-            if (do_write)
-                wr_ptr <= wr_ptr + 1;
-
-            if (rd_from_ram)
-                rd_ptr <= rd_ptr + 1;
+    always @(*) begin
+        usedw_next = usedw;
+        if (do_write && !do_read) begin
+            usedw_next = usedw + 1'b1;
+        end else if (!do_write && do_read) begin
+            usedw_next = usedw - 1'b1;
         end
     end
 
-    // -------------------------------------------------
-    // RAM counter
-    // -------------------------------------------------
-    always @(posedge clk or posedge rst) begin
-        if (rst)
-            ram_cnt <= 0;
-        else
-            ram_cnt <= ram_cnt_next;
-    end
-
-    // -------------------------------------------------
-    // выходной регистр (FWFT)
-    // -------------------------------------------------
-    always @(posedge clk or posedge rst) begin
-        if (rst) begin
-            rd_data_reg <= 0;
-            rd_valid    <= 0;
-        end else begin
-            if (need_load)
-                rd_data_reg <= mem_rd_data;
-
-            rd_valid <= rd_valid_next;
+    // =========================================================================
+    // Инференс Block RAM
+    // =========================================================================
+    
+    // Порт записи
+    always @(posedge clk) begin
+        if (do_write) begin
+            mem[wr_ptr[ADDR_W-1:0]] <= wr_data;
         end
     end
 
-    // -------------------------------------------------
-    // flags + usedw (REGISTERED)
-    // -------------------------------------------------
-    always @(posedge clk or posedge rst) begin
+    // Синхронный порт чтения с регистровым выходом (мапится в выходной регистр BRAM)
+    always @(posedge clk) begin
+        if (ram_rd_en) begin
+            rd_data <= mem[rd_ptr[ADDR_W-1:0]];
+        end
+    end
+
+    // =========================================================================
+    // Указатели, счетчик и зарегистрированные флаги
+    // =========================================================================
+
+    always @(posedge clk) begin
         if (rst) begin
-            usedw            <= 0;
-            wr_full          <= 0;
-            wr_almost_full   <= 0;
-            rd_empty         <= 1;
-            rd_almost_empty  <= 1;
+            wr_ptr          <= 0;
+            rd_ptr          <= 0;
+            usedw           <= 0;
+            wr_full         <= 1'b0;
+            wr_almost_full  <= 1'b0;
+            rd_almost_empty <= 1'b1;
+            rd_empty        <= 1'b1;
         end else begin
+            // Обновление указателей
+            if (do_write)  wr_ptr <= wr_ptr + 1'b1;
+            if (ram_rd_en) rd_ptr <= rd_ptr + 1'b1;
+
+            // Обновление точного счетчика
             usedw <= usedw_next;
 
-            wr_full        <= (usedw_next == DEPTH);
-            wr_almost_full <= (usedw_next >= ALMOST_FULL_THRESH);
-
-            rd_empty        <= (usedw_next == 0);
+            // Зарегистрированные флаги (считаются от usedw_next для отсутствия задержек)
+            wr_full         <= (usedw_next == (1<<ADDR_W));
+            wr_almost_full  <= (usedw_next >= ALMOST_FULL_THRESH);
             rd_almost_empty <= (usedw_next <= ALMOST_EMPTY_THRESH);
+
+            // Логика зарегистрированного флага rd_empty для FWFT
+            // Если мы читаем из RAM, данные будут валидны на следующем такте
+            if (ram_rd_en) begin
+                rd_empty <= 1'b0;
+            end 
+            // Если мы читаем данные с выхода, а новых из RAM нет, то становимся пустыми
+            else if (do_read) begin
+                rd_empty <= 1'b1;
+            end
         end
     end
 
