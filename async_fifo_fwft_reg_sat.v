@@ -44,13 +44,19 @@ function [PTR_W:0] bin2gray;
     bin2gray = (b >> 1) ^ b;
 endfunction
 
-function [PTR_W:0] gray2bin;
-    input [PTR_W:0] g;
+// function [PTR_W:0] gray2bin;
+//     input [PTR_W:0] g;
+//     integer i;
+//     begin
+//         gray2bin[PTR_W] = g[PTR_W];
+//         for (i = PTR_W-1; i >= 0; i = i-1)
+//             gray2bin[i] = gray2bin[i+1] ^ g[i];
+//     end
+// endfunction
+function [ADDR_WIDTH:0] gray2bin(input [ADDR_WIDTH:0] g);
     integer i;
-    begin
-        gray2bin[PTR_W] = g[PTR_W];
-        for (i = PTR_W-1; i >= 0; i = i-1)
-            gray2bin[i] = gray2bin[i+1] ^ g[i];
+    for (i = 0; i <= ADDR_WIDTH; i = i + 1) begin
+        gray2bin[i] = ^(g >> i);
     end
 endfunction
 
