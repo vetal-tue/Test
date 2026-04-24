@@ -33,7 +33,7 @@ localparam DEPTH = (1<<ADDR_W);
 // =========================
 // memory
 // =========================
-reg [DATA_W-1:0] mem [0:DEPTH-1];
+(* ram_style = "block" *) reg [DATA_W-1:0] mem [0:DEPTH-1];
 
 
 // =========================
