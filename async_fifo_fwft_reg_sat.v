@@ -53,9 +53,9 @@ endfunction
 //             gray2bin[i] = gray2bin[i+1] ^ g[i];
 //     end
 // endfunction
-function [ADDR_WIDTH:0] gray2bin(input [ADDR_WIDTH:0] g);
+function [PTR_W:0] gray2bin(input [PTR_W:0] g);
     integer i;
-    for (i = 0; i <= ADDR_WIDTH; i = i + 1) begin
+    for (i = 0; i <= PTR_W; i = i + 1) begin
         gray2bin[i] = ^(g >> i);
     end
 endfunction
