@@ -6,7 +6,7 @@ module async_fifo_fwft_xilinx_style #
     parameter ALMOST_EMPTY_THRESH = 2
 )
 (
-    // WRITE SIDE
+    // WRITE
     input                  wr_clk,
     input                  wr_rst,
     input                  wr_en,
@@ -15,7 +15,7 @@ module async_fifo_fwft_xilinx_style #
     output reg             wr_almost_full,
     output reg [ADDR_W:0]  wr_cnt,
 
-    // READ SIDE
+    // READ
     input                  rd_clk,
     input                  rd_rst,
     input                  rd_en,
@@ -73,6 +73,7 @@ module async_fifo_fwft_xilinx_style #
     // =====================================================
     // WRITE DOMAIN
     // =====================================================
+
     wire [ADDR_W:0] wr_ptr_next = wr_ptr + (wr_en && !wr_full);
     wire [ADDR_W:0] wr_cnt_next = wr_ptr_next - rd_ptr_sync;
 
@@ -93,8 +94,9 @@ module async_fifo_fwft_xilinx_style #
     end
 
     // =====================================================
-    // READ DOMAIN (FWFT, FIXED)
+    // READ DOMAIN (FWFT pipeline)
     // =====================================================
+
     reg [ADDR_W:0] mem_rd_ptr;
 
     reg [DATA_W-1:0] stage0_data, stage1_data;
@@ -102,14 +104,13 @@ module async_fifo_fwft_xilinx_style #
 
     wire can_prefetch = (mem_rd_ptr != wr_ptr_sync);
 
-    // операции
     wire push1 = stage0_valid && (!stage1_valid || rd_en); // stage0 -> stage1
     wire pop1  = rd_en && stage1_valid;
 
     // 🔥 ключ: prefetch в тот же такт что и shift
     wire do_prefetch =
         can_prefetch &&
-        ( !stage0_valid || push1 );
+        (!stage0_valid || push1);
 
     // next-state (без конфликтов!)
     wire stage1_valid_next =
@@ -165,6 +166,8 @@ module async_fifo_fwft_xilinx_style #
         end else begin
             rd_ptr <= rd_ptr_next;
             rd_ptr_gray <= bin2gray(rd_ptr_next);
+
+            // slow path
             rd_cnt <= rd_cnt_next;
             rd_almost_empty <= (rd_cnt_next <= ALMOST_EMPTY_THRESH);
         end
