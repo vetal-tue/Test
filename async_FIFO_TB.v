@@ -14,6 +14,7 @@ reg     clk1;
 reg     clk2;
 reg     reset;
 
+integer cycle_count = 0;
 
 
 initial begin
@@ -32,17 +33,38 @@ initial begin
   forever #(clk2_period / 2) clk2 = !clk2;
 end
 
+initial begin
+	$dumpfile("async_FIFO_TB.vcd");
+	$dumpvars(0,async_FIFO_TB);
+end
 
-wire [15:0] FIFO1_wr_data;
-wire        FIFO1_wr_en;
-wire        FIFO1_wr_full;
-wire        FIFO1_wr_afull;
-wire [4:0]  FIFO1_wr_used;
-wire        FIFO1_rd_en;
-wire        FIFO1_rd_empty;
-wire        FIFO1_rd_aempty;
-wire [15:0] FIFO1_rd_data;
-wire [4:0]  FIFO1_rd_used;
+// 3. Блок для подсчета тактов
+always @(posedge clk1) begin
+    cycle_count = cycle_count + 1;
+end
+
+// 4. Основной блок тестирования
+initial begin
+    $display("Simulation start.");
+
+    // Ждем N тактов. Например, 100.
+    wait (cycle_count == 100);
+
+    $display("Simulation stopped after %0d cycle_counts.", cycle_count);
+    $finish; // Останавливаем симуляцию
+end
+
+
+// wire [15:0] FIFO1_wr_data;
+// wire        FIFO1_wr_en;
+// wire        FIFO1_wr_full;
+// wire        FIFO1_wr_afull;
+// wire [4:0]  FIFO1_wr_used;
+// wire        FIFO1_rd_en;
+// wire        FIFO1_rd_empty;
+// wire        FIFO1_rd_aempty;
+// wire [15:0] FIFO1_rd_data;
+// wire [4:0]  FIFO1_rd_used;
 
 wire [15:0] FIFO2_wr_data;
 wire        FIFO2_wr_en;
@@ -76,6 +98,16 @@ wire        FIFO4_rd_empty;
 wire        FIFO4_rd_aempty;
 wire [15:0] FIFO4_rd_data;
 wire [4:0]  FIFO4_rd_used;
+
+// wire        FIFO4_wr_en;
+wire        FIFO5_wr_full;
+wire        FIFO5_wr_afull;
+wire [4:0]  FIFO5_wr_used;
+// wire        FIFO4_rd_en;
+wire        FIFO5_rd_empty;
+wire        FIFO5_rd_aempty;
+wire [15:0] FIFO5_rd_data;
+wire [4:0]  FIFO5_rd_used;
 
 // Simple_FIFO_wr        Simple_FIFO_wr1    (
 //         // AXI TX Interface
@@ -164,184 +196,6 @@ wire [4:0]  FIFO4_rd_used;
 
 //   );
 
-Simple_FIFO_wr        Simple_FIFO_wr3    (
-  .clk                (clk1),
-  .reset              (reset),
-  .m_axis_tready      (!FIFO3_wr_full),
-  .wr_data            (FIFO3_wr_data),
-  .m_axi_tvalid       (),
-  .wr_en              (FIFO3_wr_en)  
-
-  );
-
-async_fifo_fwft_reg_sat     async_fifo_fwft_reg_sat    (
-  .wr_clk           (clk1),
-  .wr_rst           (reset),
-  .wr_en            (FIFO3_wr_en),
-  .wr_data          (FIFO3_wr_data),
-  .wr_full          (FIFO3_wr_full),
-  .rd_clk           (clk2),
-  .rd_rst           (reset),
-  .rd_en            (/*1'b0*/FIFO3_rd_en),
-  .rd_data          (FIFO3_rd_data),
-  .rd_empty         (FIFO3_rd_empty),
-  .wr_cnt           (FIFO3_wr_used),
-  .rd_cnt           (FIFO3_rd_used),
-  .wr_almost_full   (FIFO3_wr_afull),
-  .rd_almost_empty  (FIFO3_rd_aempty)
-
-  );
-
-wire axis_master_from_fwft_fifo_tvalid0;
-wire axis_master_from_fwft_fifo_tready0;
-
-// simple_FIFO_rd_axis_master_2skidbufs        simple_FIFO_rd_axis_master_2skidbufs    (
-  
-//   .clk                (clk2),
-//   .reset              (reset),
-//   .m_axis_tready      (axis_master_from_fwft_fifo_tready0),
-//   .m_axis_tdata       (),
-//   .m_axis_tvalid      (axis_master_from_fwft_fifo_tvalid0),
-//   .fifo_rd_en         (FIFO3_rd_en),
-//   .fifo_empty         (FIFO3_rd_empty/*FIFO3_rd_aempty*/),
-//   .fifo_data          (FIFO3_rd_data)
-
-//   );
-
-axis_master_from_fwft_fifo_tlast    simple_FIFO_rd_axis_master_2skidbufs    (
-
-  .clk                (clk2),
-  .rst                (reset),
-  .m_axis_tready      (axis_master_from_fwft_fifo_tready0),
-  .m_axis_tdata       (),
-  .m_axis_tvalid      (axis_master_from_fwft_fifo_tvalid0),
-  .m_axis_tlast       (),
-  // .m_axis_tlast       (),
-  .fifo_rd_en         (FIFO3_rd_en),
-  .fifo_empty         (FIFO3_rd_empty),
-  .fifo_data          (FIFO3_rd_data)
-
-  );
-
-Simple_tready_gen     Simple_tready_gen3 (
-
-  .clk                (clk2),
-  .reset              (reset),
-  .tvalid             (axis_master_from_fwft_fifo_tvalid0),
-  .tready             (axis_master_from_fwft_fifo_tready0)
-
-  );
-
-Simple_FIFO_wr        Simple_FIFO_wr4    (
-  .clk                (clk1),
-  .reset              (reset),
-  // .m_axis_tready      (!FIFO4_wr_afull),
-  .m_axis_tready      (!FIFO4_wr_full),
-  .wr_data            (FIFO4_wr_data),
-  .m_axi_tvalid       (),
-  .wr_en              (FIFO4_wr_en)  
-
-  );
-
-async_fifo_fwft_reg_sat     async_fifo_fwft_reg_sat_1    (
-
-  .wr_clk           (clk1),
-  .wr_rst           (reset),
-  .wr_en            (FIFO4_wr_en),
-  .wr_data          (FIFO4_wr_data),
-  .wr_full          (FIFO4_wr_full),
-  .rd_clk           (clk2),
-  .rd_rst           (reset),
-  .rd_en            (FIFO4_rd_en),
-  .rd_data          (FIFO4_rd_data),
-  .rd_empty         (FIFO4_rd_empty),
-  .wr_cnt           (FIFO4_wr_used),
-  .rd_cnt           (FIFO4_rd_used),
-  .wr_almost_full   (FIFO4_wr_afull),
-  .rd_almost_empty  (FIFO4_rd_aempty)
-
-  );
-
-
-wire axis_master_from_fwft_fifo_tvalid1;
-wire axis_master_from_fwft_fifo_tready1;
-
-axis_master_from_fwft_fifo        Simple_FIFO_rd4    (
-
-  .clk                (clk2),
-  .rst                (reset),
-  .m_axis_tready      (/*1'b1*/axis_master_from_fwft_fifo_tready1),
-  .m_axis_tdata       (),
-  .m_axis_tvalid      (axis_master_from_fwft_fifo_tvalid1),
-  // .m_axis_tlast       (),
-  .fifo_rd_en         (FIFO4_rd_en),
-  .fifo_empty         (FIFO4_rd_empty),
-  .fifo_data          (FIFO4_rd_data)
-
-  );
-
-Simple_tready_gen     Simple_tready_gen4 (
-
-  .clk                (clk2),
-  .reset              (reset),
-  .tvalid             (axis_master_from_fwft_fifo_tvalid1),
-  .tready             (axis_master_from_fwft_fifo_tready1)
-
-  );
-
-
-// ------------------------------------------------------
-//      SYNC FIFO TEST BELOW:
-// ------------------------------------------------------
-
-// Simple_FIFO_wr        Simple_FIFO_wr1    (
-//   .clk                (clk1),
-//   .reset              (reset),
-//   .m_axis_tready      (!FIFO1_wr_full),
-//   .wr_data            (FIFO1_wr_data),
-//   .m_axi_tvalid       (),
-//   .wr_en              (FIFO1_wr_en)  
-
-//   );
-
-wire FIFO1_wr_done;
-wire FIFO1_rd_done;
-
-simple_FIFO_wr_check        Simple_FIFO_wr_chk1    (
-  .clk                (clk1),
-  .reset              (reset),
-  .fifo_wr_data       (FIFO1_wr_data),
-  .fifo_wr_en         (FIFO1_wr_en),
-  .fifo_wr_done       (FIFO1_wr_done)
-
-  );
-
-sync_fifo_fwft_reg_pow2     sync_fifo_fwft_reg_pow2    (
-
-  .clk              (clk1),
-  .rst              (reset),
-  .wr_en            (FIFO1_wr_en),
-  .wr_data          (FIFO1_wr_data),
-  .wr_full          (FIFO1_wr_full),
-  .wr_almost_full   (FIFO1_wr_afull),
-  .rd_en            (/*1'b0*/FIFO1_rd_en),
-  .rd_data          (FIFO1_rd_data),
-  .rd_empty         (FIFO1_rd_empty),
-  .rd_almost_empty  (FIFO1_rd_aempty),
-
-  .usedw            (FIFO1_wr_used)
-
-  );
-
-simple_FIFO_rd_check        Simple_FIFO_rd_chk1    (
-  .clk                (clk1),
-  .reset              (reset),
-  .fifo_rd_en         (FIFO1_rd_en),
-  .fifo_wr_done       (FIFO1_wr_done),
-  .fifo_rd_done       (FIFO1_rd_done)
-
-  );
-
 wire FIFO2_wr_done;
 wire FIFO2_rd_done;
 
@@ -354,8 +208,7 @@ simple_FIFO_wr_check        Simple_FIFO_wr_chk2    (
 
   );
 
-async_fifo_fwft_reg_gem     async_fifo_fwft_reg_gem    (
-
+async_fifo_fwft_reg_sat     FIFO2_reg_sat    (
   .wr_clk           (clk1),
   .wr_rst           (reset),
   .wr_en            (FIFO2_wr_en),
@@ -363,7 +216,7 @@ async_fifo_fwft_reg_gem     async_fifo_fwft_reg_gem    (
   .wr_full          (FIFO2_wr_full),
   .rd_clk           (clk2),
   .rd_rst           (reset),
-  .rd_en            (FIFO2_rd_en),
+  .rd_en            (/*1'b0*/FIFO2_rd_en),
   .rd_data          (FIFO2_rd_data),
   .rd_empty         (FIFO2_rd_empty),
   .wr_cnt           (FIFO2_wr_used),
@@ -373,39 +226,77 @@ async_fifo_fwft_reg_gem     async_fifo_fwft_reg_gem    (
 
   );
 
+
+async_fifo_fwft_reg_gem     FIFO3_reg_gem    (
+
+  .wr_clk           (clk1),
+  .wr_rst           (reset),
+  .wr_en            (FIFO2_wr_en),
+  .wr_data          (FIFO2_wr_data),
+  .wr_full          (FIFO3_wr_full),
+  .rd_clk           (clk2),
+  .rd_rst           (reset),
+  .rd_en            (FIFO2_rd_en),
+  .rd_data          (FIFO3_rd_data),
+  .rd_empty         (FIFO3_rd_empty),
+  .wr_cnt           (FIFO3_wr_used),
+  .rd_cnt           (FIFO3_rd_used),
+  .wr_almost_full   (FIFO3_wr_afull),
+  .rd_almost_empty  (FIFO3_rd_aempty)
+
+  );
+
+async_fifo_fwft_xilinx_style     FIFO4_reg_xilinx_style    (
+
+  .wr_clk           (clk1),
+  .wr_rst           (reset),
+  .wr_en            (FIFO2_wr_en),
+  .wr_data          (FIFO2_wr_data),
+  .wr_full          (FIFO4_wr_full),
+  .rd_clk           (clk2),
+  .rd_rst           (reset),
+  .rd_en            (FIFO2_rd_en),
+  .rd_data          (FIFO4_rd_data),
+  .rd_empty         (FIFO4_rd_empty),
+  .wr_cnt           (FIFO4_wr_used),
+  .rd_cnt           (FIFO4_rd_used),
+  .wr_almost_full   (FIFO4_wr_afull),
+  .rd_almost_empty  (FIFO4_rd_aempty)
+
+  );
+
+async_fifo_fwft_high_fmax     FIFO5_reg_high_fmax    (
+
+  .wr_clk           (clk1),
+  .wr_rst           (reset),
+  .wr_en            (FIFO2_wr_en),
+  .wr_data          (FIFO2_wr_data),
+  .wr_full          (FIFO5_wr_full),
+  .rd_clk           (clk2),
+  .rd_rst           (reset),
+  .rd_en            (FIFO2_rd_en),
+  .rd_data          (FIFO5_rd_data),
+  .rd_empty         (FIFO5_rd_empty),
+  .wr_cnt           (FIFO5_wr_used),
+  .rd_cnt           (FIFO5_rd_used),
+  .wr_almost_full   (FIFO5_wr_afull),
+  .rd_almost_empty  (FIFO5_rd_aempty)
+
+  );
+
+  
+
 simple_FIFO_rd_check        Simple_FIFO_rd_chk2    (
+
   .clk                (clk2),
   .reset              (reset),
+  .toggle_rden        (1'b1),
   .fifo_rd_en         (FIFO2_rd_en),
   .fifo_wr_done       (FIFO2_wr_done),
   .fifo_rd_done       (FIFO2_rd_done)
 
   );
 
-// wire axis_master_from_fwft_fifo_tvalid2;
-// wire axis_master_from_fwft_fifo_tready2;
 
-// axis_master_from_fwft_fifo        Simple_FIFO_rd1    (
-
-//   .clk                (clk1),
-//   .rst                (reset),
-//   .m_axis_tready      (/*1'b0*/axis_master_from_fwft_fifo_tready2),
-//   .m_axis_tdata       (),
-//   .m_axis_tvalid      (axis_master_from_fwft_fifo_tvalid2),
-//   // .m_axis_tlast       (),
-//   .fifo_rd_en         (FIFO1_rd_en),
-//   .fifo_empty         (FIFO1_rd_empty),
-//   .fifo_data          (FIFO1_rd_data)
-
-//   );
-
-// Simple_tready_gen     Simple_tready_gen1 (
-
-//   .clk                (clk1),
-//   .reset              (reset),
-//   .tvalid             (axis_master_from_fwft_fifo_tvalid2),
-//   .tready             (axis_master_from_fwft_fifo_tready2)
-
-//   );
 
 endmodule
