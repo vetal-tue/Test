@@ -3,7 +3,7 @@ module async_fifo_fwft_high_fmax #
     parameter DATA_W = 16,
     parameter ADDR_W = 4,
     parameter ALMOST_FULL_THRESH  = (1<<ADDR_W) - 2,
-    parameter ALMOST_EMPTY_THRESH = 2
+    parameter ALMOST_EMPTY_THRESH = 1
 )
 (
     // WRITE
