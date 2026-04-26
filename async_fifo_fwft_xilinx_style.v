@@ -150,12 +150,13 @@ module async_fifo_fwft_xilinx_style #
 
     wire [ADDR_W:0] rd_ptr_next = rd_ptr + do_read;
 
-    // учитываем pipeline!
-    wire [ADDR_W:0] pipe_cnt =
-        stage0_valid + stage1_valid;
+    // // учитываем pipeline!
+    // wire [ADDR_W:0] pipe_cnt =
+    //     stage0_valid + stage1_valid;
 
     wire [ADDR_W:0] rd_cnt_next =
-        (wr_ptr_sync - rd_ptr_next) + pipe_cnt;
+        (wr_ptr_sync - rd_ptr_next);
+        // (wr_ptr_sync - rd_ptr_next) + pipe_cnt;
 
     always @(posedge rd_clk or posedge rd_rst) begin
         if (rd_rst) begin
