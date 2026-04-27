@@ -4,8 +4,8 @@ module async_fifo_fwft_high_fmax_1 #
     parameter ADDR_W = 4,
     // Пороги теперь задаются как "расстояние до края"
     // ALMOST_FULL_OFFSET = 2 означает флаг за 2 слова до FULL
-    parameter ALMOST_FULL_OFFSET  = 2, 
-    parameter ALMOST_EMPTY_OFFSET = 2
+    parameter ALMOST_FULL_THRESH  = (1<<ADDR_W) - 2,
+    parameter ALMOST_EMPTY_THRESH = 2
 )
 (
     // WRITE
@@ -15,7 +15,7 @@ module async_fifo_fwft_high_fmax_1 #
     input  [DATA_W-1:0]    wr_data,
     output reg             wr_full,
     output reg             wr_almost_full,
-    output [ADDR_W:0]      wr_cnt, // Для совместимости, но внутри не используется
+    output reg [ADDR_W:0]  wr_cnt,
 
     // READ
     input                  rd_clk,
@@ -24,7 +24,7 @@ module async_fifo_fwft_high_fmax_1 #
     output [DATA_W-1:0]    rd_data,
     output                 rd_empty,
     output reg             rd_almost_empty,
-    output [ADDR_W:0]      rd_cnt
+    output reg [ADDR_W:0]  rd_cnt
 );
 
     // =====================================================
@@ -32,6 +32,12 @@ module async_fifo_fwft_high_fmax_1 #
     // =====================================================
     function [ADDR_W:0] bin2gray(input [ADDR_W:0] b);
         bin2gray = b ^ (b >> 1);
+    endfunction
+
+    function [ADDR_W:0] gray2bin(input [ADDR_W:0] g);
+        integer i;
+        for (i = 0; i <= ADDR_W; i = i + 1)
+            gray2bin[i] = ^(g >> i);
     endfunction
 
     // =====================================================
@@ -61,20 +67,25 @@ module async_fifo_fwft_high_fmax_1 #
     wire [ADDR_W:0] wr_ptr_next = wr_ptr + (wr_en && !wr_full);
     wire [ADDR_W:0] wr_ptr_gray_next = bin2gray(wr_ptr_next);
 
-    // Расчет "будущего" указателя для almost_full
-    wire [ADDR_W:0] wr_ptr_afull = wr_ptr_next + ALMOST_FULL_OFFSET;
-    wire [ADDR_W:0] wr_ptr_gray_afull = bin2gray(wr_ptr_afull);
-
-    // Инверсия для сравнения Грей-кодов на FULL
-    // (Стандартный алгоритм: инвертируем два старших бита)
+    // FULL: Мгновенное сравнение (Грей) с инверсией старших битов
     wire [ADDR_W:0] rd_ptr_gray_sync_inv = {~rd_ptr_gray_s2[ADDR_W:ADDR_W-1], rd_ptr_gray_s2[ADDR_W-2:0]};
+
+    // ALMOST FULL: Конвейеризованный бинарный указатель для разбиения критического пути
+    // 1. Преобразуем синхронизированный указатель в бинарный код
+    wire [ADDR_W:0] rd_ptr_sync_bin = gray2bin(rd_ptr_gray_s2);
+    // 2. Регистрируем бинарный указатель из другого домена!
+    // Это добавляет 1 такт пессимизма, но разбивает длинный путь (gray2bin -> sub)
+    reg [ADDR_W:0] rd_ptr_sync_bin_pipe;
+   
 
     always @(posedge wr_clk or posedge wr_rst) begin
         if (wr_rst) begin
             wr_ptr <= 0;
             wr_ptr_gray <= 0;
-            wr_full <= 0;
+            wr_full <= 0;            
+            rd_ptr_sync_bin_pipe <= 0;
             wr_almost_full <= 0;
+            wr_cnt <= 0;
         end else begin
             wr_ptr      <= wr_ptr_next;
             wr_ptr_gray <= wr_ptr_gray_next;
@@ -82,9 +93,12 @@ module async_fifo_fwft_high_fmax_1 #
             // FULL: сравнение с инвертированным указателем чтения
             wr_full <= (wr_ptr_gray_next == rd_ptr_gray_sync_inv);
             
-            // ALMOST FULL: аналогично, но с "забегающим" указателем
-            // Загорится, когда до края останется ALMOST_FULL_OFFSET или меньше
-            wr_almost_full <= (wr_ptr_gray_afull == rd_ptr_gray_sync_inv) || wr_full; 
+            // 1 такт задержки для бинарного указателя (безопасный пессимизм)
+            rd_ptr_sync_bin_pipe <= rd_ptr_sync_bin;
+            
+            // Конвейеризованный вычет (работает быстро, т.к. разорвана цепь gray2bin -> substract)
+            wr_cnt <= wr_ptr_next - rd_ptr_sync_bin_pipe;
+            wr_almost_full <= ((wr_ptr_next - rd_ptr_sync_bin_pipe) >= ALMOST_FULL_THRESH);
         end
     end
 
@@ -123,31 +137,34 @@ module async_fifo_fwft_high_fmax_1 #
     assign rd_data  = stage1_data;
     assign rd_empty = !stage1_valid;
 
-    // --- Almost Empty Logic ---
-    wire [ADDR_W:0] rd_ptr_next = rd_ptr + (rd_en && stage1_valid);
-    wire [ADDR_W:0] rd_ptr_gray_next = bin2gray(rd_ptr_next);
+    wire do_read = rd_en && stage1_valid;
+    wire [ADDR_W:0] rd_ptr_next = rd_ptr + do_read;
     
-    // "Забегающий" указатель для almost_empty
-    wire [ADDR_W:0] rd_ptr_aempty = rd_ptr_next + ALMOST_EMPTY_OFFSET;
-    wire [ADDR_W:0] rd_ptr_gray_aempty = bin2gray(rd_ptr_aempty);
+    // ALMOST EMPTY: Конвейеризованный бинарный указатель записи
+    wire [ADDR_W:0] wr_ptr_sync_bin = gray2bin(wr_ptr_gray_s2);
+    reg  [ADDR_W:0] wr_ptr_sync_bin_pipe;
 
     always @(posedge rd_clk or posedge rd_rst) begin
         if (rd_rst) begin
             rd_ptr <= 0;
             rd_ptr_gray <= 0;
+            wr_ptr_sync_bin_pipe <= 0;
             rd_almost_empty <= 1;
         end else begin
             rd_ptr      <= rd_ptr_next;
-            rd_ptr_gray <= rd_ptr_gray_next;
+            rd_ptr_gray <= bin2gray(rd_ptr_next);
             
-            // Загорится, когда в FIFO останется ALMOST_EMPTY_OFFSET или меньше
-            rd_almost_empty <= (rd_ptr_gray_aempty == wr_ptr_gray_s2) || rd_empty;
+            // 1 такт задержки
+            wr_ptr_sync_bin_pipe <= wr_ptr_sync_bin;
+            
+            // Правильный подсчет слов в FIFO (включая конвейер)
+            // wr_ptr - это общее кол-во записанных, rd_ptr - общее кол-во прочитанных пользователем
+            rd_cnt <= wr_ptr_sync_bin_pipe - rd_ptr_next;
+            
+            // Срабатывает корректно для всего диапазона (<= THRESH)
+            rd_almost_empty <= ((wr_ptr_sync_bin_pipe - rd_ptr_next) <= ALMOST_EMPTY_THRESH);
         end
     end
 
-    // Для совместимости интерфейса (если они не нужны, можно удалить)
-    // Внимание: они остались "медленными", если их раскомментировать через gray2bin
-    assign wr_cnt = 0; 
-    assign rd_cnt = 0;
 
 endmodule
