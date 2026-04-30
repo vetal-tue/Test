@@ -60,8 +60,8 @@ persistent wr_ptr rd_ptr cnt            % FIFO pointers & occupancy
 persistent out_data out_last out_valid  % output register
 
 if isempty(out_valid)
-    % fifo_data = fi(zeros(1, 4), 0, DATA_WIDTH, 0);
-    fifo_data = cast(zeros(1, 4), 'like', av_data);
+    % fifo_data = fi(zeros(1, FIFO_DEPTH), 0, DATA_WIDTH, 0);
+    fifo_data = cast(zeros(1, FIFO_DEPTH), 'like', av_data);
     fifo_last = false(1, 4);
     % wr_ptr    = uint8(0);   % 0 .. FIFO_DEPTH-1
     % rd_ptr    = uint8(0);
