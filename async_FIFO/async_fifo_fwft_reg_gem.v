@@ -60,8 +60,15 @@ module async_fifo_fwft_reg_gem #
     reg  [ADDR_W:0] mem_rd_ptr; // Внутренний указатель чтения из RAM
 
     // Регистры синхронизаторов
-    reg  [ADDR_W:0] wr_ptr_gray_s1, wr_ptr_gray_s2;
-    reg  [ADDR_W:0] rd_ptr_gray_s1, rd_ptr_gray_s2;
+
+// XILINX:
+  (* shreg_extract = "no", ASYNC_REG = "TRUE" *) reg [ADDR_W:0] wr_ptr_gray_s1, wr_ptr_gray_s2;
+  (* shreg_extract = "no", ASYNC_REG = "TRUE" *) reg [ADDR_W:0] rd_ptr_gray_s1, rd_ptr_gray_s2;
+
+// ALTERA:
+  // (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED" *) reg [ADDR_W:0] wr_ptr_gray_s1, wr_ptr_gray_s2;
+  // (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED" *) reg [ADDR_W:0] rd_ptr_gray_s1, rd_ptr_gray_s2;
+
 
     // Память и выходной регистр
     (* ram_style = "block" *) reg  [DATA_W-1:0] ram [0:(1<<ADDR_W)-1];
