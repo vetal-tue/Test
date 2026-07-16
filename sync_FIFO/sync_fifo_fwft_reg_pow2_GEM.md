@@ -147,7 +147,7 @@ endmodule
 _То есть: флаги отражают реальное состояние FIFO "прямо сейчас", но при этом сами физически являются регистровыми._ 
 
 ---
-# bypass_to_rd_data = do_push && (rd_empty || (wr_ptr == rd_ptr && do_pop));
+### bypass_to_rd_data = do_push && (rd_empty || (wr_ptr == rd_ptr && do_pop));
 
 Этот фрагмент кода —  решение одной из самых тонких проблем в FWFT (First-Word Fall-Through) FIFO.
 
