@@ -28,8 +28,19 @@ output reg                rd_almost_empty
   // Счетчик слов, находящихся конкретно внутри массива RAM (не включая rd_data)
   reg [ADDR_W:0]   ram_count;
 
-  // Двухпортовая память (синтезируется в чистый BRAM/M20K)
-  reg [DATA_W-1:0] ram [0:(1<<ADDR_W)-1];
+  // Двухпортовая память
+  // Локальные параметры и объявление памяти
+  localparam DEPTH = 1 << ADDR_W;
+  localparam MEM_BITS = DEPTH * DATA_W;
+
+  // Для Xilinx/AMD Vivado:    
+  localparam RAM_STYLE = (MEM_BITS >= 4096) ? "block" : "distributed";  
+  (* ram_style = RAM_STYLE *) reg [DATA_W-1:0] ram[0:DEPTH-1];
+
+
+  // // Для Intel/Altera Quartus:
+  // localparam RAM_STYLE = (MEM_BITS >= 4096) ? "M20K" : "MLAB";
+  // (* ramstyle = RAM_STYLE *) reg [DATA_W-1:0] ram[0:DEPTH-1];
 
   // Сигналы успешной транзакции
   wire do_pop       = rd_en && !rd_empty;
