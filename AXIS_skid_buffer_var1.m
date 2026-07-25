@@ -1,6 +1,8 @@
 function [s_ready, m_valid, m_data, m_keep, m_last] = AXIS_skid_buffer( ...
     s_valid, s_data, s_keep, s_last, m_ready)
-%#codegen
+
+% Это КОМБИНАТОРНЫЙ вариант
+% вход с выходом не развязаны через регистр
 
 DATA_T = uint16;
 KEEP_T = uint8;
