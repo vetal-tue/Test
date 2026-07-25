@@ -173,8 +173,9 @@ module async_fifo_fwft_bram_pow2_3 #(
   wire rd_empty_next  = (shift_to_dout && !user_rd) ? 1'b0 :
                           (!shift_to_dout && user_rd) ? 1'b1 : rd_empty;
 
-  // Всего слов = (Слова в BRAM) + (1 если есть в mem_rd_data) + (1 если есть на выходе)
-  wire [ADDR_W:0] rd_cnt_val = (rd_wr_bin_sync - rd_bin_next) + mem_valid_next + (!rd_empty_next);
+// Всего слов = (Слова в BRAM) + (1 если есть в mem_rd_data) + (1 если есть на выходе)
+//   wire [ADDR_W:0] rd_cnt_val = (rd_wr_bin_sync - rd_bin_next) + mem_valid_next + (!rd_empty_next);
+    wire [ADDR_W:0] rd_cnt_val = (rd_wr_bin_sync - rd_bin_next);
 
   always @(posedge rd_clk or posedge rst) begin
     if (rst) begin
