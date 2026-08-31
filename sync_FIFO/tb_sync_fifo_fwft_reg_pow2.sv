@@ -68,7 +68,8 @@ module tb_sync_fifo_fwft_reg_pow2;
     end
 
     initial begin
-      $dumpfile("sync_FIFO_TB.vcd");
+      // $dumpfile("sync_FIFO_TB.vcd");
+      $dumpfile("sync_FIFO_TB.fst");
       $dumpvars(0, tb_sync_fifo_fwft_reg_pow2);
     end
 
@@ -452,7 +453,8 @@ module tb_sync_fifo_fwft_reg_pow2;
         fork
             // --- 1. ПОТОК СТИМУЛОВ ЗАПИСИ (Write Driver) ---
             begin
-                int stim_wr_cnt = 0;
+                int stim_wr_cnt; // = 0;
+                stim_wr_cnt = 0;
                 while (stim_wr_cnt < TEST_WORDS) begin
                     // Выставляем сигналы на текущий такт
                     if ($urandom_range(0, 99) < 70) begin
@@ -475,7 +477,8 @@ module tb_sync_fifo_fwft_reg_pow2;
 
             // --- 2. ПОТОК СТИМУЛОВ ЧТЕНИЯ (Read Driver) ---
             begin
-                int stim_rd_cnt = 0;
+                int stim_rd_cnt; // = 0;
+                stim_rd_cnt = 0;
                 while (stim_rd_cnt < TEST_WORDS) begin
                     // Разрешаем чтение со случайной вероятностью (только если FIFO не пусто)
                     if (!rd_empty && ($urandom_range(0, 99) < 60)) begin
@@ -498,8 +501,11 @@ module tb_sync_fifo_fwft_reg_pow2;
             // Этот процесс пассивно наблюдает за шинами строго по фронту клока.
             // Он обновляет память и сравнивает данные. Никаких внутритактовых задержек!
             begin
-                int mon_wr_cnt = 0;
-                int mon_rd_cnt = 0;
+                int mon_wr_cnt; // = 0;
+                int mon_rd_cnt; //= 0;
+                
+                mon_wr_cnt = 0;                
+                mon_rd_cnt = 0;
                 
                 // Ждем, пока обе операции (запись и чтение) не достигнут лимита
                 while (mon_rd_cnt < TEST_WORDS || mon_wr_cnt < TEST_WORDS) begin
