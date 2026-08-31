@@ -303,46 +303,6 @@ module tb_sync_fifo_fwft_reg_pow2;
     if (rd_data !== 16'hEEEE || rd_empty) $error("T4: Read during Empty broke Write fall-through!");
   endtask
 
-  // ---------------------------------------------------------
-  // 5. Специфические тайминги
-  // ---------------------------------------------------------
-  // task test_5_specific_timings();
-  //   $display("[TEST 5] Specific Timings & Bubble Test...");
-  //   apply_reset();
-
-  //   // Back-to-back throughput
-  //   $display("   -> Back-to-back testing");
-  //   fork
-  //     // Поток записи
-  //     begin
-  //       for (int i = 0; i < DEPTH * 2; i++) begin
-  //         wr_en   <= 1;
-  //         wr_data <= i;
-  //         @(posedge clk);
-  //       end
-  //       wr_en <= 0;
-  //     end
-  //     // Поток чтения (ждет появления данных)
-  //     begin
-  //       for (int i = 0; i < DEPTH * 2; i++) begin
-  //         wait (!rd_empty);
-  //         rd_en <= 1;
-  //         @(posedge clk);
-  //         rd_en <= 0;
-  //       end
-  //     end
-  //   join
-
-  //   if (wr_full) $error("T5: FIFO should not become full during throughput test!");
-
-  //   // Сброс на лету
-  //   $display("   -> On-the-fly reset");
-  //   for (int i = 0; i < DEPTH / 2; i++) write_word(16'h1111 * i);
-  //   rst <= 1; // Асинхронный/синхронный сброс во время работы
-  //   @(posedge clk);
-  //   if (rd_empty !== 1 || wr_full !== 0) $error("T5: Flags did not clear immediately on reset!");
-  //   rst <= 0;
-  // endtask
 // ---------------------------------------------------------
     // 5. Специфические тайминги
     // ---------------------------------------------------------
@@ -350,42 +310,49 @@ module tb_sync_fifo_fwft_reg_pow2;
         $display("[TEST 5] Specific Timings & Bubble Test...");
         apply_reset();
         
-        // Back-to-back throughput
         $display("   -> Back-to-back testing");
+        
+        // 1. Предзапись первого слова, чтобы данные «провалились» на rd_data (FWFT)
+        // и сбросился флаг rd_empty
+        write_word(16'hA000);
+        #1;
+        
+        // 2. Непрерывный параллельный поток записи и чтения
         fork
-            // Поток записи
+            // Поток непрерывной записи (wr_en держится 1 без сбросов)
             begin
-                for (int i = 0; i < DEPTH * 2; i++) begin
-                    wr_en <= 1; wr_data <= i;
+                wr_en <= 1;
+                for (int i = 1; i < DEPTH * 2; i++) begin
+                    wr_data <= 16'hA000 + i;
                     @(posedge clk);
                 end
                 wr_en <= 0;
             end
-            // Поток чтения (ждет появления данных)
+            
+            // Поток непрерывного чтения (rd_en держится 1 без сбросов)
             begin
+                wait (!rd_empty);
+                rd_en <= 1; // Поднимаем rd_en единожды
                 for (int i = 0; i < DEPTH * 2; i++) begin
-                    wait (!rd_empty);
-                    rd_en <= 1;
                     @(posedge clk);
-                    rd_en <= 0;
-                    #1; // Даем симулятору обновить rd_empty
+                    #1; // Дельта-задержка для обновления сигналов
                 end
+                rd_en <= 0; // Опускаем rd_en только после прохождения всего потока
             end
         join
         
         #1;
         if (wr_full) $error("T5: FIFO should not become full during throughput test!");
 
-        // Сброс на лету
+        // 3. Сброс на лету
         $display("   -> On-the-fly reset");
         for (int i = 0; i < DEPTH/2; i++) begin
             write_word(16'h1111 * i);
         end
         
-        // Подаем сброс
         rst <= 1;
-        @(posedge clk); // Регистры сбрасываются по этому фронту
-        #1;             // <<< ДЕЛЬТА-ЗАДЕРЖКА: даем симулятору обновить сигналы
+        @(posedge clk);
+        #1;
         
         if (rd_empty !== 1 || wr_full !== 0) begin
             $error("T5: Flags did not clear immediately on reset! rd_empty=%b, wr_full=%b", 
