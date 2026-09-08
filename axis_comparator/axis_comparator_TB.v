@@ -42,7 +42,7 @@ module axis_comparator_TB ();
     $display("Simulation start.");
 
     // Ждем N тактов. Например, 100.
-    wait (cycle_count == 200);
+    wait (cycle_count == 400);
 
     $display("Simulation stopped after %0d cycle_counts.", cycle_count);
     $finish;  // Останавливаем симуляцию
@@ -65,10 +65,12 @@ module axis_comparator_TB ();
   wire        m_axi_tlast2;
   wire        m_axi_tready2;
   wire [ 3:0] m_axi_tkeep2;
+  wire        m_axi_tuser2;
 
   wire [31:0] m_axi_tdata3;
   wire        m_axi_tvalid3;
   wire        m_axi_tlast3;
+  wire        m_axi_tuser3;
   wire        m_axi_tready3;
   wire [ 3:0] m_axi_tkeep3;
 
@@ -147,6 +149,7 @@ module axis_comparator_TB ();
       .m_axis_tdata(m_axi_tdata2),
       .m_axis_tvalid(m_axi_tvalid2),
       .m_axis_tlast(m_axi_tlast2),
+      .m_axis_tuser(m_axi_tuser2),
       .m_axis_tkeep(m_axi_tkeep2)
   );
 
@@ -158,17 +161,20 @@ module axis_comparator_TB ();
       .s0_tready(s0_tready),
       .s0_tdata(m_axi_tdata1),
       .s0_tvalid(m_axi_tvalid1),
+      .s0_tuser(1'b0),
       .s0_tlast(m_axi_tlast1),
       .s0_tkeep(m_axi_tkeep1),
       .s1_tready(s1_tready),
       .s1_tdata(s1_axis_tdata_tb  /*m_axi_tdata1*/),
       .s1_tvalid(m_axi_tvalid1),
+      .s1_tuser(1'b0),
       .s1_tlast(m_axi_tlast1),
       .s1_tkeep(m_axi_tkeep1),
       .m_tready(1'b1),
       .m_tdata(m_axi_tdata3),
       .m_tvalid(m_axi_tvalid3),
       .m_tlast(m_axi_tlast3),
+      .m_tuser(m_axi_tuser3),
       .m_tkeep(m_axi_tkeep3)
   );
 
