@@ -28,7 +28,8 @@ module axis_comparator_TB ();
 
 
   initial begin
-    $dumpfile("axis_comparator_TB.vcd");
+    // $dumpfile("axis_comparator_TB.vcd");
+    $dumpfile("axis_comparator_TB");
     $dumpvars(0, axis_comparator_TB);
   end
 
@@ -51,6 +52,7 @@ module axis_comparator_TB ();
 
 
   wire [31:0] m_axi_tdata1;
+  wire [31:0] m_axi_tdata1_corr;
   wire [31:0] s1_axis_tdata_tb = m_axi_tdata1;
   wire        m_axi_tvalid1;
   wire        m_axi_tlast1;
@@ -113,19 +115,21 @@ module axis_comparator_TB ();
       .enable(1'b1),
       .m_axis_tready(s0_axis_tready  /*m_axi_tready1*/),
       .m_axis_tdata(m_axi_tdata1),
+      .m_axis_tdata1(m_axi_tdata1_corr),
       .m_axis_tvalid(m_axi_tvalid1),
       .m_axis_tlast(m_axi_tlast1),
       .m_axis_tkeep(m_axi_tkeep1)
   );
 
-  initial begin
-    #105ns;
-    // force AXIS_comparator_my.s1_axis_tdata = m_axi_tdata1 + 1'b1;
-    force s1_axis_tdata_tb = 32'hDEADBEEF;
+//   initial begin
+//     #104ns;
+//     // force AXIS_comparator_my.s1_axis_tdata = m_axi_tdata1 + 1'b1;
+//     force s1_axis_tdata_tb = 32'hDEADBEEF;
 
-    #clk1_period;
-    release s1_axis_tdata_tb;
-  end
+//     #clk1_period;
+//     @(posedge clk1)
+//     release s1_axis_tdata_tb;
+//   end
 
 
 
@@ -140,7 +144,7 @@ module axis_comparator_TB ();
       .s0_axis_tkeep(m_axi_tkeep1),
       .s0_axis_tuser(1'b0),
       .s1_axis_tready(s1_axis_tready),
-      .s1_axis_tdata(s1_axis_tdata_tb  /*m_axi_tdata1*/),
+      .s1_axis_tdata(/*s1_axis_tdata_tb*/  m_axi_tdata1_corr),
       .s1_axis_tvalid(m_axi_tvalid1),
       .s1_axis_tlast(m_axi_tlast1),
       .s1_axis_tkeep(m_axi_tkeep1),
@@ -165,7 +169,7 @@ module axis_comparator_TB ();
       .s0_tlast(m_axi_tlast1),
       .s0_tkeep(m_axi_tkeep1),
       .s1_tready(s1_tready),
-      .s1_tdata(s1_axis_tdata_tb  /*m_axi_tdata1*/),
+      .s1_tdata(/*s1_axis_tdata_tb*/  m_axi_tdata1_corr),
       .s1_tvalid(m_axi_tvalid1),
       .s1_tuser(1'b0),
       .s1_tlast(m_axi_tlast1),
@@ -177,6 +181,16 @@ module axis_comparator_TB ();
       .m_tuser(m_axi_tuser3),
       .m_tkeep(m_axi_tkeep3)
   );
+
+    initial begin
+    #104ns;
+    // force AXIS_comparator_my.s1_axis_tdata = m_axi_tdata1 + 1'b1;
+    force s1_axis_tdata_tb = 32'hDEADBEEF;
+
+    #clk1_period;
+    @(posedge clk1)
+    release s1_axis_tdata_tb;
+  end
 
 
 
