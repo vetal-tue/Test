@@ -1,76 +1,52 @@
-function [s0_axis_tready, s1_axis_tready, m_axis_tdata, m_axis_tvalid, m_axis_tlast, m_axis_tuser, state, m_axis_tkeep]= AXIS_comparator(s0_axis_tdata, s0_axis_tvalid, s0_axis_tlast, s0_axis_tuser, s0_axis_tkeep, m_axis_tready, s1_axis_tdata, s1_axis_tvalid, s1_axis_tlast, s1_axis_tuser, s1_axis_tkeep, select_in)
+function [s0_axis_tready, s1_axis_tready, m_axis_tdata, m_axis_tvalid, m_axis_tlast, m_axis_tuser, state, m_axis_tkeep]= skid_buff(s0_axis_tdata, s0_axis_tvalid, s0_axis_tlast, s0_axis_tuser, s0_axis_tkeep, m_axis_tready, s1_axis_tdata, s1_axis_tvalid, s1_axis_tlast, s1_axis_tuser, s1_axis_tkeep, select_in)
 
 fm = fimath('OverflowMode','Wrap');
-SIZE = 32;
-KEEP_WIDTH = SIZE/8;
-KEEP_ENABLE = 1;
-% ENABLE_SMALL_FRAME = 1;
-% MIN_FRAME_LENGTH = 64;
 
-
-AXIS_nt = numerictype(0,SIZE,0);
-nt32 = numerictype(0,32,0);
-
-persistent m_axis_tdata_reg;
-if isempty(m_axis_tdata_reg)
-    m_axis_tdata_reg = fi(0, AXIS_nt, fm);
+if isa(s0_axis_tdata,'integer')==0
+    SIZE = s0_axis_tdata.WordLength;
+elseif isa(s0_axis_tdata, 'uint8')
+    SIZE = 8;
+elseif isa(s0_axis_tdata, 'uint16')
+    SIZE = 16;
+elseif isa(s0_axis_tdata, 'uint32')
+    SIZE = 32;
+elseif isa(s0_axis_tdata, 'uint64')
+    SIZE = 64;
+else
+    error('Unsupported data type: %s', class(s0_axis_tdata));
 end
-persistent m_axis_tkeep_reg;
-if isempty(m_axis_tkeep_reg)
-    m_axis_tkeep_reg = fi(0, 0, m_axis_tdata_reg.WordLength/8, 0, fm);
+
+
+KEEP_WIDTH = SIZE/8; % s0_axis_tdata.WordLength/8; 
+KEEP_ENABLE = 1;
+
+% AXIS_nt = numerictype(0,SIZE,0);
+
+persistent m_axis_tdata_reg m_axis_tkeep_reg m_axis_tvalid_reg m_axis_tlast_reg m_axis_tuser_reg
+if isempty(m_axis_tdata_reg)
+    m_axis_tdata_reg = fi(0, 0, SIZE, 0, fm);
+    m_axis_tkeep_reg = fi(0, 0, KEEP_WIDTH, 0, fm);
+    m_axis_tvalid_reg = false;
+    m_axis_tlast_reg = false;
+    m_axis_tuser_reg = false;
 end
 persistent m_axis_tready_int_reg;
 if isempty(m_axis_tready_int_reg)
     m_axis_tready_int_reg = false;
 end
-persistent m_axis_tvalid_reg;
-if isempty(m_axis_tvalid_reg)
-    m_axis_tvalid_reg = false;
-end
-persistent temp_m_axis_tvalid_reg;
-if isempty(temp_m_axis_tvalid_reg)
-    temp_m_axis_tvalid_reg = false;
-end
-persistent temp_m_axis_tlast_reg;
-if isempty(temp_m_axis_tlast_reg)
-    temp_m_axis_tlast_reg = false;
-end
-persistent temp_m_axis_tuser_reg;
-if isempty(temp_m_axis_tuser_reg)
-    temp_m_axis_tuser_reg = false;
-end
-persistent temp_m_axis_tdata_reg;
+persistent temp_m_axis_tdata_reg temp_m_axis_tvalid_reg temp_m_axis_tlast_reg ...
+    temp_m_axis_tuser_reg temp_m_axis_tkeep_reg
 if isempty(temp_m_axis_tdata_reg)
-    temp_m_axis_tdata_reg = fi(0, AXIS_nt, fm);
+    temp_m_axis_tdata_reg = fi(0, 0, SIZE, 0, fm);
+    temp_m_axis_tvalid_reg = false;
+    temp_m_axis_tlast_reg = false;
+    temp_m_axis_tuser_reg = false;
+    temp_m_axis_tkeep_reg = fi(0, 0, KEEP_WIDTH, 0, fm);
 end
-persistent temp_m_axis_tkeep_reg;
-if isempty(temp_m_axis_tkeep_reg)
-    temp_m_axis_tkeep_reg = fi(0, 0, m_axis_tkeep_reg.WordLength, 0, fm);
-end
-persistent m_axis_tlast_reg;
-if isempty(m_axis_tlast_reg)
-    m_axis_tlast_reg = false;
-end
-persistent m_axis_tuser_reg;
-if isempty(m_axis_tuser_reg)
-    m_axis_tuser_reg = false;
-end
-% persistent s_axis_tready_reg;
-% if isempty(s_axis_tready_reg)
-%     s_axis_tready_reg = false;
-% end
 
 persistent state_reg;
 if isempty(state_reg)
     state_reg = fi(0,0,2,0,fm);
-end
-persistent stored_s_axis_tlast;
-if isempty(stored_s_axis_tlast)
-    stored_s_axis_tlast = false;
-end
-persistent stored_s_axis_tkeep;
-if isempty(stored_s_axis_tkeep)
-    stored_s_axis_tkeep = fi(0,0,s0_axis_tkeep.WordLength,0,fm);
 end
 persistent flush_s0_reg flush_s1_reg
 if isempty(flush_s0_reg)
@@ -115,9 +91,11 @@ else
 end
 % int_tkeep  = KEEP_ENABLE ? (current_select ? s1_tkeep : s0_tkeep) : {KEEP_WIDTH{1'b1}};
 if (KEEP_ENABLE)
-    m_axis_tkeep_int  = fi(selected_keep,0,s0_axis_tkeep.WordLength,0,fm);
+    % m_axis_tkeep_int  = fi(selected_keep,0,s0_axis_tkeep.WordLength,0,fm);
+    m_axis_tkeep_int  = fi(selected_keep,0,KEEP_WIDTH,0,fm);
 else
-    m_axis_tkeep_int  = fi(2^KEEP_WIDTH-1,0,s0_axis_tkeep.WordLength,0,fm);
+    % m_axis_tkeep_int  = fi(2^KEEP_WIDTH-1,0,s0_axis_tkeep.WordLength,0,fm);
+    m_axis_tkeep_int  = fi(2^KEEP_WIDTH-1,0,KEEP_WIDTH,0,fm);
 end
 
 
@@ -128,23 +106,32 @@ both_valid = s0_axis_tvalid && s1_axis_tvalid;
 
  % Проверка совпадения данных и tkeep (если tkeep включен)
 data_match = s0_axis_tdata == s1_axis_tdata;
-keep_match = KEEP_ENABLE || (s0_axis_tkeep == s1_axis_tkeep);
-match = data_match && keep_match;
+keep_match = KEEP_ENABLE==0 || (s0_axis_tkeep == s1_axis_tkeep);
+match = data_match && keep_match && ~(s0_axis_tuser || s1_axis_tuser);
 
 
 % Входные ready-сигналы
 % s0_tready = (state_reg == STATE_PASS) ? (both_valid && int_tready) : flush_s0_reg;
 % s1_tready = (state_reg == STATE_PASS) ? (both_valid && int_tready) : flush_s1_reg;
-if (state_reg == STATE_PASS)
-    s0_axis_tready = both_valid && m_axis_tready_int_reg;
-    s1_axis_tready = both_valid && m_axis_tready_int_reg;
+% if (state_reg == STATE_PASS)
+%     s0_axis_tready = both_valid && m_axis_tready_int_reg;
+%     s1_axis_tready = both_valid && m_axis_tready_int_reg;
+% else
+%     s0_axis_tready = flush_s0_reg;
+%     s1_axis_tready = flush_s1_reg;
+% end
 
+% assign s0_tready = (state_reg == STATE_PASS) ? (s1_tvalid && int_tready) : flush_s0_reg;
+% assign s1_tready = (state_reg == STATE_PASS) ? (s0_tvalid && int_tready) : flush_s1_reg;
+if (state_reg == STATE_PASS)
+    s0_axis_tready = s1_axis_tvalid && m_axis_tready_int_reg;
+    s1_axis_tready = s0_axis_tvalid && m_axis_tready_int_reg;
 else
     s0_axis_tready = flush_s0_reg;
     s1_axis_tready = flush_s1_reg;
 end
 
-state_next    = state_reg;
+% state_next    = state_reg;
 flush_s0_next = flush_s0_reg;
 flush_s1_next = flush_s1_reg;
 
@@ -154,8 +141,8 @@ switch uint8(state_reg)
         if (both_valid)
             m_axis_tvalid_int = true;
             % Прерываем кадр (выдаем tlast=1), если данные/tkeep не совпали или хотя бы один кадр закончился
-            m_axis_tlast_int = ~match || s0_axis_tlast || s1_axis_tlast || s0_axis_tuser || s1_axis_tuser;
-            m_axis_tuser_int = ~match || s0_axis_tuser || s1_axis_tuser;
+            m_axis_tlast_int = ~match || s0_axis_tlast || s1_axis_tlast;
+            m_axis_tuser_int = ~match;
 
           if (m_axis_tready_int_reg)
               
@@ -171,10 +158,17 @@ switch uint8(state_reg)
                   end
     
                   if (~s0_axis_tlast || ~s1_axis_tlast)
-                      % state_reg(1) = STATE_FLUSH;
-                      state_next(1) = STATE_FLUSH;
+                      state_reg(1) = STATE_FLUSH;
+                      % state_next(1) = STATE_FLUSH;
                   end
               end
+
+              % Фиксируем select на первом слове кадра
+              if (~frame_reg)
+                  select_reg = select_in;
+              end
+              % Удерживаем frame_reg до тех пор, пока не встретим tlast
+              frame_reg = ~m_axis_tlast_int;
           end
         end
               
@@ -195,8 +189,8 @@ switch uint8(state_reg)
 
         % Как только оба мастера выдали tlast — возвращаемся в PASS
         if (~flush_s0_next && ~flush_s1_next)
-            % state_reg(1) = STATE_PASS;
-            state_next(1) = STATE_PASS;
+            state_reg(1) = STATE_PASS;
+            % state_next(1) = STATE_PASS;
         end
 
     % otherwise
@@ -206,19 +200,19 @@ end
 flush_s0_reg = flush_s0_next;
 flush_s1_reg = flush_s1_next;
 
-if (state_reg == STATE_PASS)
-     if (both_valid && m_axis_tready_int_reg)
-        % Фиксируем select на первом слове кадра
-        if (~frame_reg)
-            select_reg = select_in;
-        end
-         % Удерживаем frame_reg до тех пор, пока не встретим tlast
-        frame_reg = ~m_axis_tlast_int;
-     end
-else
-    frame_reg = false;   
-end
-state_reg = state_next;
+% if (state_reg == STATE_PASS)
+%      if (both_valid && m_axis_tready_int_reg)
+%         % Фиксируем select на первом слове кадра
+%         if (~frame_reg)
+%             select_reg = select_in;
+%         end
+%          % Удерживаем frame_reg до тех пор, пока не встретим tlast
+%         frame_reg = ~m_axis_tlast_int;
+%      end
+% else
+%     frame_reg = false;   
+% end
+% state_reg = state_next;
 
 % Разрешение на прием данных в следующем такте:
 % если выход готов ИЛИ временный регистр не заполнится на следующем такте
