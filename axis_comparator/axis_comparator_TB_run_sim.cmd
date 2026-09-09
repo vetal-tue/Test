@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 rem Список исходных файлов (добавьте/удалите по необходимости)
-set SOURCES=AXIS_comparator\AXIS_comparator.v axis_comparator.v AXIS_rnd_master_32bit.v axis_comparator_TB.v
+set SOURCES=AXIS_comparator\AXIS_comparator.v axis_comparator.v AXIS_rnd_master_32bit\AXIS_rnd_master_32bit.v axis_comparator_TB.v
 
 set OUTPUT=simv.exe
 @REM set VCD=sync_FIFO_TB.vcd
@@ -16,8 +16,8 @@ if errorlevel 1 (
 )
 
 echo Starting simulation...
-vvp %OUTPUT%
-@REM vvp %OUTPUT% -fst
+@REM vvp %OUTPUT%
+vvp %OUTPUT% -fst
 if errorlevel 1 (
     echo Error execution simulation!
     pause
