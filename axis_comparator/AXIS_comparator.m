@@ -1,4 +1,4 @@
-function [s0_axis_tready, s1_axis_tready, m_axis_tdata, m_axis_tvalid, m_axis_tlast, m_axis_tuser, state, m_axis_tkeep]= skid_buff(s0_axis_tdata, s0_axis_tvalid, s0_axis_tlast, s0_axis_tuser, s0_axis_tkeep, m_axis_tready, s1_axis_tdata, s1_axis_tvalid, s1_axis_tlast, s1_axis_tuser, s1_axis_tkeep, select_in)
+function [s0_axis_tready, s1_axis_tready, m_axis_tdata, m_axis_tvalid, m_axis_tlast, m_axis_tuser, state, m_axis_tkeep]= AXIS_comparator(s0_axis_tdata, s0_axis_tvalid, s0_axis_tlast, s0_axis_tuser, s0_axis_tkeep, m_axis_tready, s1_axis_tdata, s1_axis_tvalid, s1_axis_tlast, s1_axis_tuser, s1_axis_tkeep, select_in)
 
 fm = fimath('OverflowMode','Wrap');
 
@@ -111,16 +111,6 @@ match = data_match && keep_match && ~(s0_axis_tuser || s1_axis_tuser);
 
 
 % Входные ready-сигналы
-% s0_tready = (state_reg == STATE_PASS) ? (both_valid && int_tready) : flush_s0_reg;
-% s1_tready = (state_reg == STATE_PASS) ? (both_valid && int_tready) : flush_s1_reg;
-% if (state_reg == STATE_PASS)
-%     s0_axis_tready = both_valid && m_axis_tready_int_reg;
-%     s1_axis_tready = both_valid && m_axis_tready_int_reg;
-% else
-%     s0_axis_tready = flush_s0_reg;
-%     s1_axis_tready = flush_s1_reg;
-% end
-
 % assign s0_tready = (state_reg == STATE_PASS) ? (s1_tvalid && int_tready) : flush_s0_reg;
 % assign s1_tready = (state_reg == STATE_PASS) ? (s0_tvalid && int_tready) : flush_s1_reg;
 if (state_reg == STATE_PASS)
@@ -131,7 +121,6 @@ else
     s1_axis_tready = flush_s1_reg;
 end
 
-% state_next    = state_reg;
 flush_s0_next = flush_s0_reg;
 flush_s1_next = flush_s1_reg;
 
@@ -159,7 +148,6 @@ switch uint8(state_reg)
     
                   if (~s0_axis_tlast || ~s1_axis_tlast)
                       state_reg(1) = STATE_FLUSH;
-                      % state_next(1) = STATE_FLUSH;
                   end
               end
 
@@ -192,32 +180,15 @@ switch uint8(state_reg)
             state_reg(1) = STATE_PASS;
             % state_next(1) = STATE_PASS;
         end
-
-    % otherwise
-    %     % null
 end
 
 flush_s0_reg = flush_s0_next;
 flush_s1_reg = flush_s1_next;
 
-% if (state_reg == STATE_PASS)
-%      if (both_valid && m_axis_tready_int_reg)
-%         % Фиксируем select на первом слове кадра
-%         if (~frame_reg)
-%             select_reg = select_in;
-%         end
-%          % Удерживаем frame_reg до тех пор, пока не встретим tlast
-%         frame_reg = ~m_axis_tlast_int;
-%      end
-% else
-%     frame_reg = false;   
-% end
-% state_reg = state_next;
 
 % Разрешение на прием данных в следующем такте:
 % если выход готов ИЛИ временный регистр не заполнится на следующем такте
 m_axis_tready_int_early = m_axis_tready || (~temp_m_axis_tvalid_reg && (~m_axis_tvalid_reg || ~m_axis_tvalid_int));
-% m_axis_tready_int_early = m_axis_tready || (~temp_m_axis_tvalid_reg && ~m_axis_tvalid_reg);
 
 
 store_axis_int_to_output = false;
