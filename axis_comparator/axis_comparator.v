@@ -121,7 +121,7 @@ module axis_comparator #(
         if (both_valid) begin
           int_tvalid = 1'b1;
           int_tlast  = (!match) || s0_tlast || s1_tlast;
-          int_tuser  = (!match) || s0_tuser || s1_tuser;
+          int_tuser  = !match;
 
           if (int_tready) begin
             if (!match || s0_tlast || s1_tlast) begin
