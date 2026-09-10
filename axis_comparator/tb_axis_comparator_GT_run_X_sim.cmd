@@ -37,12 +37,11 @@ if errorlevel 1 (
 REM ============================================================
 REM  Генерация TCL-скрипта для дампа VCD "на лету"
 REM ============================================================
-echo [3/4] Generating %TCL_FILE%...
 (
-    echo open_vcd %VCD_FILE%
-    echo log_vcd [get_objects /%TOP_MODULE%/*]
+    @REM  echo open_vcd %VCD_FILE%
+    @REM  echo log_vcd [get_objects -r /%TOP_MODULE%/*]
     echo run all
-    echo close_vcd
+    @REM  echo close_vcd
     echo quit
 ) > %TCL_FILE%
 
@@ -63,9 +62,19 @@ if %SIM_RESULT% neq 0 (
 )
 
 REM ============================================================
+REM  Нормализация имени VCD (xsim может создать файл без .vcd)
+REM ============================================================
+if not exist "%VCD_FILE%" (
+    if exist "%TOP_MODULE%" (
+        echo Renaming extensionless VCD "%TOP_MODULE%" -^> "%VCD_FILE%"
+        ren "%TOP_MODULE%" "%VCD_FILE%"
+    )
+)
+
+REM ============================================================
 REM  5. Конвертация VCD -> FST и удаление VCD
 REM ============================================================
-echo [5/5] Converting VCD to FST...
+@REM  echo [5/5] Converting VCD to FST...
 if not exist "%VCD_FILE%" (
     echo Warning: %VCD_FILE% not found, skipping conversion.
     goto :done
@@ -94,11 +103,11 @@ if exist xelab.log del /q xelab.log
 if exist xvlog.log del /q xvlog.log
 @REM  if exist xvlog.pb del /q xvlog.pb
 if exist x*.pb del /q x*.pb
-if exist xsim_*.backup.* del /q xsim_*.backup.*
+if exist xsim*.backup.* del /q xsim*.backup.*
 if exist webtalk*.* del /q webtalk*.*
 
 if exist %SNAPSHOT_NAME%.wdb del /q %SNAPSHOT_NAME%.wdb
 REM Папка со снапшотом
 if exist xsim.dir rmdir /s /q xsim.dir
 
-pause
+@REM  pause
