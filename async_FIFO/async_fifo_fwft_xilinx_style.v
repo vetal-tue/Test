@@ -42,11 +42,11 @@ module async_fifo_fwft_xilinx_style #(
   reg [ADDR_W:0] wr_ptr, wr_ptr_gray;
   reg [ADDR_W:0] rd_ptr, rd_ptr_gray;
 
-// XILINX:
+  // XILINX:
   (* shreg_extract = "no", ASYNC_REG = "TRUE" *) reg [ADDR_W:0] wr_ptr_gray_s1, wr_ptr_gray_s2;
   (* shreg_extract = "no", ASYNC_REG = "TRUE" *) reg [ADDR_W:0] rd_ptr_gray_s1, rd_ptr_gray_s2;
 
-// ALTERA:
+  // ALTERA:
   // (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED" *) reg [ADDR_W:0] wr_ptr_gray_s1, wr_ptr_gray_s2;
   // (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED" *) reg [ADDR_W:0] rd_ptr_gray_s1, rd_ptr_gray_s2;
 
@@ -54,20 +54,42 @@ module async_fifo_fwft_xilinx_style #(
   wire [ADDR_W:0] rd_ptr_sync = gray2bin(rd_ptr_gray_s2);
 
   // sync
-  always @(posedge rd_clk) begin
-    wr_ptr_gray_s1 <= wr_ptr_gray;
-    wr_ptr_gray_s2 <= wr_ptr_gray_s1;
+  // always @(posedge rd_clk) begin
+  //   wr_ptr_gray_s1 <= wr_ptr_gray;
+  //   wr_ptr_gray_s2 <= wr_ptr_gray_s1;
+  // end
+
+  // always @(posedge wr_clk) begin
+  //   rd_ptr_gray_s1 <= rd_ptr_gray;
+  //   rd_ptr_gray_s2 <= rd_ptr_gray_s1;
+  // end
+
+  always @(posedge rd_clk or posedge rd_rst) begin
+    // always @(posedge rd_clk) begin
+    if (rd_rst) begin
+      wr_ptr_gray_s1 <= 0;
+      wr_ptr_gray_s2 <= 0;
+    end else begin
+      wr_ptr_gray_s1 <= wr_ptr_gray;
+      wr_ptr_gray_s2 <= wr_ptr_gray_s1;
+    end
   end
 
-  always @(posedge wr_clk) begin
-    rd_ptr_gray_s1 <= rd_ptr_gray;
-    rd_ptr_gray_s2 <= rd_ptr_gray_s1;
+  always @(posedge wr_clk or posedge wr_rst) begin
+    // always @(posedge wr_clk) begin
+    if (wr_rst) begin
+      rd_ptr_gray_s1 <= 0;
+      rd_ptr_gray_s2 <= 0;
+    end else begin
+      rd_ptr_gray_s1 <= rd_ptr_gray;
+      rd_ptr_gray_s2 <= rd_ptr_gray_s1;
+    end
   end
 
   // =====================================================
   // RAM
   // =====================================================
-  
+
   localparam DEPTH = 1 << ADDR_W;
   localparam MEM_BITS = DEPTH * DATA_W;
   localparam RAM_STYLE = (MEM_BITS >= 4096) ? "block" : "distributed";
@@ -83,8 +105,8 @@ module async_fifo_fwft_xilinx_style #(
   wire [ADDR_W:0] wr_ptr_next = wr_ptr + (wr_en && !wr_full);
   wire [ADDR_W:0] wr_cnt_next = wr_ptr_next - rd_ptr_sync;
 
-  // always @(posedge wr_clk or posedge wr_rst) begin
-  always @(posedge wr_clk) begin
+  always @(posedge wr_clk or posedge wr_rst) begin
+    // always @(posedge wr_clk) begin
     if (wr_rst) begin
       wr_ptr <= 0;
       wr_ptr_gray <= 0;
@@ -122,8 +144,8 @@ module async_fifo_fwft_xilinx_style #(
 
   wire stage0_valid_next = (stage0_valid && !push1) || do_prefetch;
 
-  // always @(posedge rd_clk or posedge rd_rst) begin
-  always @(posedge rd_clk) begin
+  always @(posedge rd_clk or posedge rd_rst) begin
+    // always @(posedge rd_clk) begin
     if (rd_rst) begin
       mem_rd_ptr   <= 0;
       stage0_valid <= 0;
@@ -160,8 +182,8 @@ module async_fifo_fwft_xilinx_style #(
   wire [ADDR_W:0] rd_cnt_next = (wr_ptr_sync - rd_ptr_next);
   // (wr_ptr_sync - rd_ptr_next) + pipe_cnt;
 
-  // always @(posedge rd_clk or posedge rd_rst) begin
-  always @(posedge rd_clk) begin
+  always @(posedge rd_clk or posedge rd_rst) begin
+    // always @(posedge rd_clk) begin
     if (rd_rst) begin
       rd_ptr <= 0;
       rd_ptr_gray <= 0;
