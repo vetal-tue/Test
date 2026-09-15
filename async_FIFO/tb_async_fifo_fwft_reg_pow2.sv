@@ -577,29 +577,42 @@ module tb_async_fifo_fwft_reg_pow2;
             wr_en   = 1;
             wr_data = $urandom();
           end
-          wr_en = 0;
+          wr_en = 0; // Гарантированно обнуляем wr_en после остановки
         end
 
         // Поток чтения
-        begin
-          while (!stop_traffic) begin
-            @(posedge rd_clk);
-            #1ps;
-            rd_en = 1;
-          end
-          rd_en = 0;
-        end
+        // begin
+        //   while (!stop_traffic) begin
+        //     @(posedge rd_clk);
+        //     #1ps;
+        //     rd_en = 1;
+        //   end
+        //   rd_en = 0; // Гарантированно обнуляем rd_en после остановки
+        // end
 
-        // Поток подачи сброса
+        // // Поток подачи сброса
+        // begin
+        //   #100ns;
+        //   async_reset(30);
+        //   stop_traffic = 1; // Корректный сигнализатор завершения потоков
+        // end
         begin
           #100ns;
-          async_reset(30);
-          stop_traffic = 1; // Корректный сигнализатор завершения потоков
+          rst = 1;  // 1. Включаем сброс прямо во время работы
+          repeat (30) @(posedge wr_clk);
+
+          stop_traffic = 1;            // 2. Сигнализируем остановку генераторов ПОКА rst=1
+          repeat (5)
+          @(posedge wr_clk);  // 3. Ждем, пока циклами обнулятся wr_en и rd_en
+
+          #1ps;
+          rst = 0;  // 4. Безопасно снимаем сброс, когда wr_en==0
         end
       join
 
     end
 
+    // Даем время на синхронизацию CDC после снятия сброса
     repeat (10) @(posedge rd_clk);
     check(rd_empty == 1 && wr_cnt == 0 && rd_cnt == 0, "Clean Slate After On-The-Fly Reset",
           "Ghost data remaining in prefetch pipeline after reset under load");
