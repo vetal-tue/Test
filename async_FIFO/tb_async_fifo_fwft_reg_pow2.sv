@@ -617,42 +617,30 @@ module tb_async_fifo_fwft_reg_pow2;
     check(rd_empty == 1 && wr_cnt == 0 && rd_cnt == 0, "Clean Slate After On-The-Fly Reset",
           "Ghost data remaining in prefetch pipeline after reset under load");
 
-    // 7.4 Сброс под нагрузкой (On-the-fly Reset & Clean Slate)
-    // async_reset();
-    // fork
-    //   begin
-    //     forever begin
-    //       @(posedge wr_clk);
-    //       #1ps;
-    //       wr_en   = 1;
-    //       wr_data = $urandom();
-    //     end
-    //   end
-    //   begin
-    //     forever begin
-    //       @(posedge rd_clk);
-    //       #1ps;
-    //       rd_en = 1;
-    //     end
-    //   end
-    //   begin
-    //     #100ns;
-    //     async_reset(30);  // Дергаем сброс прямо посреди трафика
-    //   end
-    // join_any
-    // disable fork;
-
-    // wr_en = 0;
-    // rd_en = 0;
-    // repeat (10) @(posedge rd_clk);
-    // check(rd_empty == 1 && wr_cnt == 0 && rd_cnt == 0, "Clean Slate After On-The-Fly Reset",
-    //       "Ghost data remaining in prefetch pipeline after reset under load");
-
-    // 7.5 Паттерн "Шагающая единица" (Walking 1)
+     // 7.5 Паттерн "Шагающая единица" (Walking 1)
     async_reset();
-    for (int b = 0; b < DATA_W; b++) begin
-      write_word(1 << b);
+
+    // for (int b = 0; b < DATA_W; b++) begin
+    //   write_word(1 << b);
+    // end
+
+    // Подготавливаем первый элемент до фронта
+    @(posedge wr_clk); #1ps;
+    wr_en   = 1;
+    wr_data = (1'b1 << 0);
+
+    // Цикл непрерывной записи для всех оставшихся разрядов
+    for (int i = 1; i < DATA_W; i++) begin
+        @(posedge wr_clk); #1ps;
+        wr_data = (1'b1 << i); // Смена данных на КАЖДОМ такте
     end
+
+    // Ждем фронт, на котором защелкнется последний бит (DATA_W-1)
+    @(posedge wr_clk); #1ps;
+    wr_en   = 0;  // Снимаем запись строго после последнего слова
+    wr_data = '0;
+
+
     repeat (5) @(posedge rd_clk);
     for (int b = 0; b < DATA_W; b++) begin
       logic [DATA_W-1:0] val;
