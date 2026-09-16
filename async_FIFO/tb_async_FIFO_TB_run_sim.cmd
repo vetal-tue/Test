@@ -31,4 +31,4 @@ if errorlevel 1 (
 @REM     echo Warning: no VCD-file found.
 @REM )
 
-pause
+@REM pause
