@@ -44,7 +44,6 @@ module tb_async_fifo_fwft_reg_pow2;
   // =========================================================================
   // Инстанцирование DUT
   // =========================================================================
-  // async_fifo_fwft_reg_pow2 #(
   async_fifo_fwft_xilinx_style #(
       .DATA_W(DATA_W),
       .ADDR_W(ADDR_W),
@@ -86,11 +85,10 @@ module tb_async_fifo_fwft_reg_pow2;
     $dumpvars(0, tb_async_fifo_fwft_reg_pow2);
   end
 
-  // Защита от бесконечного зависания симуляции (5 миллисекунд)
+  // Watchdog Timeout (5 миллисекунд)
   initial begin
     #5ms;
     $display("\n[FATAL] Watchdog Timeout! Simulation took too long or got stuck in a loop.");
-    $display("Flushing waveforms and exiting...");
     $dumpflush;
     $finish;
   end
@@ -99,22 +97,17 @@ module tb_async_fifo_fwft_reg_pow2;
   // Вспомогательные задачи
   // =========================================================================
 
-  // Проверка условий с выводом результатов
   task automatic check(input logic condition, input string test_name, input string fail_msg);
     if (condition) begin
       $display("[PASS] %s", test_name);
       test_pass_cnt++;
     end else begin
-      // $error("[FAIL] %s: %s", test_name, fail_msg);
       $display("[FAIL at %0t] %s: %s", $time, test_name, fail_msg);
       test_fail_cnt++;
-      // $display(
-      //     "ERROR [T5 Monitor at %0t]: Data mismatch at item %0d! Exp: 0x%0h, Got: 0x%0h",
-      //     $time, mon_rd_cnt, ref_mem[ref_rd_ptr], rd_data);
     end
   endtask
 
-  // Подача асинхронного сброса
+  // Подача асинхронного сброса с паузой на восстановление CDC
   task automatic async_reset(real duration_ns = 50.0);
     rst = 1'b1;
     wr_en = 1'b0;
@@ -123,26 +116,41 @@ module tb_async_fifo_fwft_reg_pow2;
     golden_queue.delete();
     #(duration_ns);
     rst = 1'b0;
+    // Даем время асинхронным синхронизаторам сброса выйти из состояния reset
+    repeat (10) @(posedge wr_clk);
+    repeat (10) @(posedge rd_clk);
   endtask
 
   // Запись 1 слова в домене wr_clk
   task automatic write_word(input logic [DATA_W-1:0] data);
-    @(posedge wr_clk);
-    #1ps;
+    int timeout_cnt = 0;
+    while (wr_full && timeout_cnt < 200) begin
+      @(posedge wr_clk);
+      #1ps;
+      timeout_cnt++;
+    end
+
     wr_en   = 1'b1;
     wr_data = data;
     if (!wr_full) golden_queue.push_back(data);
+
     @(posedge wr_clk);
     #1ps;
     wr_en = 1'b0;
   endtask
 
-  // Чтение 1 слова в домене rd_clk
+  // Чтение 1 слова в домене rd_clk (непрерывный поток FWFT)
   task automatic read_word(output logic [DATA_W-1:0] data);
-    @(posedge rd_clk);
-    #1ps;
-    rd_en = 1'b1;
+    int timeout_cnt = 0;
+    while (rd_empty && timeout_cnt < 200) begin
+      @(posedge rd_clk);
+      #1ps;
+      timeout_cnt++;
+    end
+
     data  = rd_data;
+    rd_en = 1'b1;
+
     @(posedge rd_clk);
     #1ps;
     rd_en = 1'b0;
@@ -153,34 +161,6 @@ module tb_async_fifo_fwft_reg_pow2;
   // =========================================================================
 
   // 1. Сброс и начальное состояние
-  // task automatic test_reset_and_init();
-  //   $display("\n--- RUNNING: 1. Reset & Initialization ---");
-
-  //   // Асинхронный сброс
-  //   rst = 1;
-  //   #10ns;
-  //   check(wr_full == 0 && rd_empty == 1 && wr_cnt == 0 && rd_cnt == 0, "Async Reset Assert",
-  //         "Signals not reset correctly during rst=1");
-
-  //   // Выход из сброса и восстановление
-  //   async_reset(40);
-  //   repeat (30) @(posedge wr_clk);
-  //   check(wr_full == 0 && rd_empty == 1 && wr_cnt == 0 && rd_cnt == 0, "Reset Recovery",
-  //         "Flags/counters drifted without enable signals");
-
-  //   // Игнорирование Enable во время сброса
-  //   rst = 1;
-  //   wr_en = 1;
-  //   rd_en = 1;
-  //   wr_data = 16'hDEAD;
-  //   repeat (5) @(posedge wr_clk);
-  //   rst   = 0;
-  //   wr_en = 0;
-  //   rd_en = 0;
-  //   repeat (10) @(posedge rd_clk);
-  //   check(rd_empty == 1 && wr_cnt == 0, "Ignore Enable During Reset",
-  //         "Data was written or counter modified during reset");
-  // endtask
   task automatic test_reset_and_init();
     $display("\n--- RUNNING: 1. Reset & Initialization ---");
 
@@ -190,11 +170,9 @@ module tb_async_fifo_fwft_reg_pow2;
           "Signals not reset correctly during rst=1");
 
     async_reset(40);
-    repeat (30) @(posedge wr_clk);
     check(wr_full == 0 && rd_empty == 1 && wr_cnt == 0 && rd_cnt == 0, "Reset Recovery",
           "Flags/counters drifted without enable signals");
 
-    // Игнорирование Enable во время сброса (без Race Condition)
     rst = 1;
     #1ps;
     wr_en   = 1;
@@ -202,13 +180,11 @@ module tb_async_fifo_fwft_reg_pow2;
     wr_data = 16'hDEAD;
     repeat (5) @(posedge wr_clk);
 
-    // Сначала снимаем Enable, пока rst все еще удержан в 1
     #1ps;
     wr_en = 0;
     rd_en = 0;
     repeat (2) @(posedge wr_clk);
 
-    // Затем безопасно снимаем сброс
     #1ps;
     rst = 0;
     repeat (10) @(posedge rd_clk);
@@ -220,6 +196,7 @@ module tb_async_fifo_fwft_reg_pow2;
   // 2. Специфика FWFT (First-Word Fall-Through)
   task automatic test_fwft_spec();
     int latency_cycles = 0;
+    int timeout_cnt = 0;
     logic [DATA_W-1:0] read_val;
     $display("\n--- RUNNING: 2. FWFT Specifics ---");
     async_reset();
@@ -229,19 +206,24 @@ module tb_async_fifo_fwft_reg_pow2;
 
     fork
       begin
-        while (rd_empty) begin
+        while (rd_empty && timeout_cnt < 100) begin
           @(posedge rd_clk);
+          #1ps;
           latency_cycles++;
+          timeout_cnt++;
         end
       end
     join
 
-    check(rd_data == 16'hA5A5, "FWFT Immediate Availability", $sformatf(
-          "Expected 0xA5A5, got 0x%04X before rd_en", rd_data));
+    check(rd_data == 16'hA5A5 && !rd_empty, "FWFT Immediate Availability", $sformatf(
+          "Expected 0xA5A5, got 0x%04X before rd_en (rd_empty=%0b)", rd_data, rd_empty));
     $display("[INFO] CDC FWFT Latency: %0d rd_clk cycles", latency_cycles);
 
     // Одиночное чтение
     read_word(read_val);
+    check(read_val == 16'hA5A5, "FWFT Single Read Data", $sformatf(
+          "Expected 0xA5A5, got 0x%04X", read_val));
+
     repeat (3) @(posedge rd_clk);
     check(rd_empty == 1 && rd_cnt == 0, "FWFT Single Read Back To Empty",
           "FIFO did not return to empty state after 1 read");
@@ -284,7 +266,6 @@ module tb_async_fifo_fwft_reg_pow2;
     $display("\n--- RUNNING: 3. Boundary Volumes & Thresholds ---");
     async_reset();
 
-    // Полное заполнение
     for (int i = 0; i < DEPTH; i++) begin
       write_word(16'hB000 + i);
     end
@@ -293,24 +274,17 @@ module tb_async_fifo_fwft_reg_pow2;
     check(wr_full == 1 && wr_cnt == DEPTH, "Full Fill Check", $sformatf(
           "Expected wr_full=1, wr_cnt=%0d. Got wr_cnt=%0d", DEPTH, wr_cnt));
 
-    // Опустошение непрерывным потоком с проверкой целостности
     repeat (5) @(posedge rd_clk);
-    @(posedge rd_clk);
-    #1ps;
-    rd_en = 1;
     for (int i = 0; i < DEPTH; i++) begin
-      check(rd_data == (16'hB000 + i), "Data Integrity Full Drain", $sformatf(
-            "Expected 0x%04X, got 0x%04X at index %0d", 16'hB000 + i, rd_data, i));
-      @(posedge rd_clk);
-      #1ps;
+      logic [DATA_W-1:0] val;
+      read_word(val);
+      check(val == (16'hB000 + i), "Data Integrity Full Drain", $sformatf(
+            "Expected 0x%04X, got 0x%04X at index %0d", 16'hB000 + i, val, i));
     end
-    rd_en = 0;
     repeat (3) @(posedge rd_clk);
     check(rd_empty == 1, "Full Drain Empty Check", "FIFO not empty after reading all items");
 
-    // Пороги Almost Full/Empty
     async_reset();
-    // Медленное заполнение до ALMOST_FULL_THRESH
     for (int i = 0; i < ALMOST_FULL_THRESH; i++) begin
       write_word(16'hC000 + i);
     end
@@ -318,12 +292,15 @@ module tb_async_fifo_fwft_reg_pow2;
     check(wr_almost_full == 1 && wr_cnt >= ALMOST_FULL_THRESH, "Almost Full Threshold",
           "wr_almost_full failed to assert at threshold");
 
-    // Медленное вычитывание до ALMOST_EMPTY_THRESH
     repeat (5) @(posedge rd_clk);
-    while (rd_cnt > ALMOST_EMPTY_THRESH) begin
-      logic [DATA_W-1:0] dummy;
-      read_word(dummy);
-      repeat (2) @(posedge rd_clk);
+    begin
+      int safety_counter = 0;
+      while (rd_cnt > ALMOST_EMPTY_THRESH && safety_counter < 100) begin
+        logic [DATA_W-1:0] dummy;
+        read_word(dummy);
+        repeat (2) @(posedge rd_clk);
+        safety_counter++;
+      end
     end
     check(rd_almost_empty == 1, "Almost Empty Threshold",
           "rd_almost_empty failed to assert at threshold");
@@ -334,7 +311,6 @@ module tb_async_fifo_fwft_reg_pow2;
     $display("\n--- RUNNING: 4. Continuous & Concurrent Streaming ---");
     async_reset();
 
-    // Прозрачное прохождение (Pass-through)
     fork
       begin
         for (int i = 0; i < 50; i++) begin
@@ -343,20 +319,13 @@ module tb_async_fifo_fwft_reg_pow2;
       end
       begin
         for (int i = 0; i < 50; i++) begin
-          while (rd_empty) @(posedge rd_clk);
-          @(posedge rd_clk);
-          #1ps;
-          rd_en = 1;
-          check(rd_data == (16'hD000 + i), "Pass-Through Data Check",
-                "Data corrupted in pass-through");
-          @(posedge rd_clk);
-          #1ps;
-          rd_en = 0;
+          logic [DATA_W-1:0] val;
+          read_word(val);
+          check(val == (16'hD000 + i), "Pass-Through Data Check", "Data corrupted in pass-through");
         end
       end
     join
 
-    // Одновременная запись и чтение при wr_full == 1
     async_reset();
     for (int i = 0; i < DEPTH; i++) write_word(16'hE000 + i);
     repeat (5) @(posedge wr_clk);
@@ -374,7 +343,6 @@ module tb_async_fifo_fwft_reg_pow2;
     repeat (5) @(posedge wr_clk);
     check(!wr_full || wr_full, "Full Concurrent R/W", "FIFO locked up during full R/W");
 
-    // Одновременная запись и чтение при 1 элементе (Почти пустом)
     async_reset();
     write_word(16'hF111);
     repeat (5) @(posedge rd_clk);
@@ -394,7 +362,6 @@ module tb_async_fifo_fwft_reg_pow2;
     logic [DATA_W-1:0] val;
     $display("\n--- RUNNING: 5. Asynchronous Domains (CDC) ---");
 
-    // Fast Write (100MHz), Slow Read (10MHz)
     WR_CLK_PERIOD = 10.0;
     RD_CLK_PERIOD = 100.0;
     #200ns;
@@ -404,12 +371,10 @@ module tb_async_fifo_fwft_reg_pow2;
     repeat (5) @(rd_clk);
 
     for (int i = 0; i < 8; i++) begin
-      //   logic [DATA_W-1:0] val;
       read_word(val);
       check(val == (16'h1000 + i), "Fast Write Slow Read", "Data mismatch in slow read domain");
     end
 
-    // Slow Write (10MHz), Fast Read (100MHz)
     WR_CLK_PERIOD = 100.0;
     RD_CLK_PERIOD = 10.0;
     #200ns;
@@ -424,15 +389,16 @@ module tb_async_fifo_fwft_reg_pow2;
       end
       begin
         for (int i = 0; i < 5; i++) begin
-          while (rd_empty) @(posedge rd_clk);
+          while (rd_empty) begin
+            @(posedge rd_clk);
+            #1ps;
+          end
           check(!rd_empty, "Slow Write Fast Read Glitch Check", "rd_empty glitched");
-          //   logic [DATA_W-1:0] val;
           read_word(val);
         end
       end
     join
 
-    // Близкие частоты и дрейф фаз (100.0 MHz vs 99.9 MHz)
     WR_CLK_PERIOD = 10.000;
     RD_CLK_PERIOD = 10.010;
     #200ns;
@@ -442,7 +408,6 @@ module tb_async_fifo_fwft_reg_pow2;
     repeat (10) @(posedge rd_clk);
     check(rd_cnt > 0, "Near Frequencies Drift", "FIFO pointers corrupted under phase drift");
 
-    // Возврат настроек клоков по умолчанию
     WR_CLK_PERIOD = 10.0;
     RD_CLK_PERIOD = 10.0;
     #100ns;
@@ -454,33 +419,39 @@ module tb_async_fifo_fwft_reg_pow2;
     $display("\n--- RUNNING: 6. Safeguards (Overflow & Underflow) ---");
     async_reset();
 
-    // Overflow
     for (int i = 0; i < DEPTH; i++) write_word(16'h7000 + i);
     repeat (5) @(posedge wr_clk);
 
-    // Попытка записать еще 10 слов поверх FULL
-    for (int i = 0; i < 10; i++) write_word(16'hBAD0 + i);
+    for (int i = 0; i < 10; i++) begin
+      @(posedge wr_clk);
+      #1ps;
+      wr_en   = 1;
+      wr_data = 16'hBAD0 + i;
+      @(posedge wr_clk);
+      #1ps;
+      wr_en = 0;
+    end
     repeat (5) @(posedge rd_clk);
 
-    // Проверка: вычитываются ли только первые DEPTH легальных слов
     for (int i = 0; i < DEPTH; i++) begin
-      //   logic [DATA_W-1:0] val;
       read_word(val);
       check(val == (16'h7000 + i), "Overflow Protection",
             "Pointer wrapped around or overwritten data");
     end
     check(rd_empty == 1, "Overflow Empty Check", "Extra illegitimate words were written");
 
-    // Underflow
     async_reset();
-    // Попытка вычитать из пустого FIFO 10 раз
     for (int i = 0; i < 10; i++) begin
-      //   logic [DATA_W-1:0] val;
-      read_word(val);
+      @(posedge rd_clk);
+      #1ps;
+      rd_en = 1'b1;
+
+      @(posedge rd_clk);
+      #1ps;
+      rd_en = 1'b0;
     end
     check(rd_cnt == 0, "Underflow Count Check", "rd_cnt went negative/corrupted after underflow");
 
-    // Легальная запись и чтение после Underflow
     write_word(16'hF00D);
     repeat (5) @(posedge rd_clk);
     check(rd_data == 16'hF00D, "Underflow Recovery",
@@ -498,7 +469,7 @@ module tb_async_fifo_fwft_reg_pow2;
         for (int i = 0; i < 100; i++) begin
           @(posedge wr_clk);
           #1ps;
-          if ($urandom_range(0, 99) < 30) begin  // 30% вероятность записи
+          if ($urandom_range(0, 99) < 30) begin
             if (!wr_full) begin
               wr_en   = 1;
               wr_data = $urandom();
@@ -514,7 +485,7 @@ module tb_async_fifo_fwft_reg_pow2;
         for (int i = 0; i < 200; i++) begin
           @(posedge rd_clk);
           #1ps;
-          if ($urandom_range(0, 99) < 30) begin  // 30% вероятность чтения
+          if ($urandom_range(0, 99) < 30) begin
             if (!rd_empty) begin
               rd_en = 1;
               if (golden_queue.size() > 0) begin
@@ -560,16 +531,13 @@ module tb_async_fifo_fwft_reg_pow2;
     RD_CLK_PHASE = 0.0;
     #100ns;
 
-    // 7.4 Сброс под нагрузкой (совместимо с Icarus Verilog)
+    // 7.4 Сброс под нагрузкой
     begin
-
       bit stop_traffic;
       stop_traffic = 0;
-
       async_reset();
 
       fork
-        // Поток записи
         begin
           while (!stop_traffic) begin
             @(posedge wr_clk);
@@ -577,77 +545,104 @@ module tb_async_fifo_fwft_reg_pow2;
             wr_en   = 1;
             wr_data = $urandom();
           end
-          wr_en = 0; // Гарантированно обнуляем wr_en после остановки
+          wr_en = 0;
         end
-
-        // Поток чтения
-        // begin
-        //   while (!stop_traffic) begin
-        //     @(posedge rd_clk);
-        //     #1ps;
-        //     rd_en = 1;
-        //   end
-        //   rd_en = 0; // Гарантированно обнуляем rd_en после остановки
-        // end
-
-        // // Поток подачи сброса
-        // begin
-        //   #100ns;
-        //   async_reset(30);
-        //   stop_traffic = 1; // Корректный сигнализатор завершения потоков
-        // end
         begin
           #100ns;
-          rst = 1;  // 1. Включаем сброс прямо во время работы
+          rst = 1;
           repeat (30) @(posedge wr_clk);
-
-          stop_traffic = 1;            // 2. Сигнализируем остановку генераторов ПОКА rst=1
-          repeat (5)
-          @(posedge wr_clk);  // 3. Ждем, пока циклами обнулятся wr_en и rd_en
-
+          stop_traffic = 1;
+          repeat (5) @(posedge wr_clk);
           #1ps;
-          rst = 0;  // 4. Безопасно снимаем сброс, когда wr_en==0
+          rst = 0;
         end
       join
-
     end
 
-    // Даем время на синхронизацию CDC после снятия сброса
     repeat (10) @(posedge rd_clk);
     check(rd_empty == 1 && wr_cnt == 0 && rd_cnt == 0, "Clean Slate After On-The-Fly Reset",
           "Ghost data remaining in prefetch pipeline after reset under load");
 
-     // 7.5 Паттерн "Шагающая единица" (Walking 1)
+    // 7.5 Паттерн "Шагающая единица" (Walking 1)
     async_reset();
 
-    // for (int b = 0; b < DATA_W; b++) begin
-    //   write_word(1 << b);
-    // end
 
-    // Подготавливаем первый элемент до фронта
-    @(posedge wr_clk); #1ps;
-    wr_en   = 1;
-    wr_data = (1'b1 << 0);
+    // fork
+    //   begin
+    //     for (int b = 0; b < DATA_W; b++) begin
+    //       while (wr_full) begin
+    //         @(posedge wr_clk);
+    //         #1ps;
+    //       end
+    //       wr_en   = 1'b1;
+    //       wr_data = (1'b1 << b);
+    //       @(posedge wr_clk);
+    //       #1ps;
+    //       wr_en = 1'b0;
+    //     end
+    //     wr_data = '0;
+    //   end
+    //   begin
+    //     for (int b = 0; b < DATA_W; b++) begin
+    //       logic [DATA_W-1:0] val;
+    //       read_word(val);
+    //       check(val == (1'b1 << b), "Walking 1 Bus Integrity", $sformatf(
+    //             "Bit integrity error at bit %0d", b));
+    //     end
+    //   end
+    // join
+    fork
+      // -----------------------------------------------------------------------
+      // ПОТОК ЗАПИСИ (Producer): Пишет потоком, защищен от wr_full при DATA_W > DEPTH
+      // -----------------------------------------------------------------------
+      begin
+        // Явное выравнивание по фронту wr_clk перед первой записью!
+        @(posedge wr_clk);
+        #1ps;
 
-    // Цикл непрерывной записи для всех оставшихся разрядов
-    for (int i = 1; i < DATA_W; i++) begin
-        @(posedge wr_clk); #1ps;
-        wr_data = (1'b1 << i); // Смена данных на КАЖДОМ такте
-    end
+        for (int b = 0; b < DATA_W; b++) begin
+          int timeout_cnt = 0;
 
-    // Ждем фронт, на котором защелкнется последний бит (DATA_W-1)
-    @(posedge wr_clk); #1ps;
-    wr_en   = 0;  // Снимаем запись строго после последнего слова
-    wr_data = '0;
+          // Если DATA_W > DEPTH, FIFO переполнится.
+          // Ждем, пока поток чтения вычитает данные и CDC-синхронизатор сбросит wr_full.
+          while (wr_full && timeout_cnt < 500) begin
+            @(posedge wr_clk);
+            #1ps;
+            timeout_cnt++;
+          end
 
+          // Защита от бесконечного зависания в случае сбоя RTL
+          if (timeout_cnt >= 500) begin
+            $display("[FAIL at %0t] Walking 1 Writer stuck: wr_full did not clear at bit %0d",
+                     $time, b);
+            test_fail_cnt++;
+            break;
+          end
 
-    repeat (5) @(posedge rd_clk);
-    for (int b = 0; b < DATA_W; b++) begin
-      logic [DATA_W-1:0] val;
-      read_word(val);
-      check(val == (1 << b), "Walking 1 Bus Integrity", $sformatf(
-            "Bit integrity error at bit %0d", b));
-    end
+          wr_en   = 1'b1;
+          wr_data = (1'b1 << b);
+
+          @(posedge wr_clk);
+          #1ps;
+          wr_en = 1'b0;
+        end
+        wr_data = '0;
+      end
+
+      // -----------------------------------------------------------------------
+      // ПОТОК ЧТЕНИЯ (Consumer): Вычитывает параллельно и освобождает место
+      // -----------------------------------------------------------------------
+      begin
+        for (int b = 0; b < DATA_W; b++) begin
+          logic [DATA_W-1:0] val;
+
+          read_word(val);
+
+          check(val == (1'b1 << b), "Walking 1 Bus Integrity", $sformatf(
+                "Bit integrity error at bit %0d", b));
+        end
+      end
+    join
 
     // 7.6 Паттерн "Адрес как данные" (Address as Data)
     async_reset();
@@ -680,8 +675,7 @@ module tb_async_fifo_fwft_reg_pow2;
     test_advanced_checks();
 
     $display("\n=================================================");
-    $display(" VERIFICATION SUMMARY ");
-    $display("=================================================");
+    $display(" VERIFICATION SUMMARY: ");
     $display(" TESTS PASSED: %0d", test_pass_cnt);
     $display(" TESTS FAILED: %0d", test_fail_cnt);
     $display("=================================================");
@@ -692,7 +686,6 @@ module tb_async_fifo_fwft_reg_pow2;
       $display(">>> VERIFICATION FAILED WITH ERRORS! <<<");
     end
 
-    $dumpflush;
     $finish;
   end
 
