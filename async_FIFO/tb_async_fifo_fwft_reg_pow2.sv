@@ -402,7 +402,10 @@ module tb_async_fifo_fwft_reg_pow2;
     WR_CLK_PERIOD = 10.000;
     RD_CLK_PERIOD = 10.010;
     #200ns;
+
     async_reset();
+    @(posedge wr_clk);
+    #1ps;
 
     for (int i = 0; i < 20; i++) write_word(16'h3000 + i);
     repeat (10) @(posedge rd_clk);
@@ -418,6 +421,8 @@ module tb_async_fifo_fwft_reg_pow2;
     logic [DATA_W-1:0] val;
     $display("\n--- RUNNING: 6. Safeguards (Overflow & Underflow) ---");
     async_reset();
+    @(posedge wr_clk);
+    #1ps;
 
     for (int i = 0; i < DEPTH; i++) write_word(16'h7000 + i);
     repeat (5) @(posedge wr_clk);
@@ -452,6 +457,8 @@ module tb_async_fifo_fwft_reg_pow2;
     end
     check(rd_cnt == 0, "Underflow Count Check", "rd_cnt went negative/corrupted after underflow");
 
+    @(posedge wr_clk);
+    #1ps;
     write_word(16'hF00D);
     repeat (5) @(posedge rd_clk);
     check(rd_data == 16'hF00D, "Underflow Recovery",
@@ -505,6 +512,9 @@ module tb_async_fifo_fwft_reg_pow2;
 
     // 7.2 Балансирование на грани (Threshold Dancing)
     async_reset();
+    @(posedge wr_clk);
+    #1ps;
+
     for (int i = 0; i < ALMOST_FULL_THRESH; i++) write_word(16'hA000 + i);
     repeat (5) @(posedge wr_clk);
 
@@ -524,6 +534,8 @@ module tb_async_fifo_fwft_reg_pow2;
     RD_CLK_PHASE = WR_CLK_PERIOD / 2.0;
     #100ns;
     async_reset();
+    @(posedge wr_clk);
+    #1ps;
     write_word(16'h180D);
     repeat (5) @(posedge rd_clk);
     check(rd_data == 16'h180D, "180 Degree Phase Shift CDC",
@@ -646,6 +658,8 @@ module tb_async_fifo_fwft_reg_pow2;
 
     // 7.6 Паттерн "Адрес как данные" (Address as Data)
     async_reset();
+    @(posedge wr_clk);
+    #1ps;
     for (int i = 0; i < DEPTH; i++) begin
       write_word(i);
     end
@@ -681,9 +695,9 @@ module tb_async_fifo_fwft_reg_pow2;
     $display("=================================================");
 
     if (test_fail_cnt == 0) begin
-      $display(">>> ALL TESTS PASSED SUCCESSFULLY! <<<");
+      $display(">>> ALL TESTS PASSED SUCCESSFULLY! <<<\n");
     end else begin
-      $display(">>> VERIFICATION FAILED WITH ERRORS! <<<");
+      $display(">>> VERIFICATION FAILED WITH ERRORS! <<<\n");
     end
 
     $finish;
