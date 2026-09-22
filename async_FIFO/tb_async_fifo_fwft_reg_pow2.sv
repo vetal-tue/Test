@@ -24,15 +24,22 @@ module tb_async_fifo_fwft_reg_pow2;
   logic              wr_en;
   logic [DATA_W-1:0] wr_data;
   logic              wr_full;
+  logic              wr_full1;
   logic              wr_almost_full;
+  logic              wr_almost_full1;
   logic [  ADDR_W:0] wr_cnt;
+  logic [  ADDR_W:0] wr_cnt1;
 
   logic              rd_clk;
   logic              rd_en;
   logic [DATA_W-1:0] rd_data;
+  logic [DATA_W-1:0] rd_data1;
   logic [  ADDR_W:0] rd_cnt;
+  logic [  ADDR_W:0] rd_cnt1;
   logic              rd_empty;
+  logic              rd_empty1;
   logic              rd_almost_empty;
+  logic              rd_almost_empty1;
 
   // Счётчики результатов
   int                test_pass_cnt = 0;
@@ -64,6 +71,53 @@ module tb_async_fifo_fwft_reg_pow2;
       .rd_cnt         (rd_cnt),
       .rd_empty       (rd_empty),
       .rd_almost_empty(rd_almost_empty)
+  );
+
+  // async_fifo_fwft_bram_pow2_3 #(
+  //     .DATA_W(DATA_W),
+  //     .ADDR_W(ADDR_W),
+  //     .ALMOST_FULL_THRESH(ALMOST_FULL_THRESH),
+  //     .ALMOST_EMPTY_THRESH(ALMOST_EMPTY_THRESH)
+  // ) dut (
+  //     .wr_clk         (wr_clk),
+  //     // .wr_rst         (rst),
+  //     .rst            (rst),
+  //     .wr_en          (wr_en),
+  //     .wr_data        (wr_data),
+  //     .wr_full        (wr_full),
+  //     .wr_almost_full (wr_almost_full),
+  //     .wr_cnt         (wr_cnt),
+  //     .rd_clk         (rd_clk),
+  //     // .rd_rst         (rst),
+  //     .rd_en          (rd_en),
+  //     .rd_data        (rd_data),
+  //     .rd_cnt         (rd_cnt),
+  //     .rd_empty       (rd_empty),
+  //     .rd_almost_empty(rd_almost_empty)
+  // );
+
+
+  async_fifo_fwft_reg_pow2_4 #(
+      .DATA_W(DATA_W),
+      .ADDR_W(ADDR_W),
+      .ALMOST_FULL_THRESH(ALMOST_FULL_THRESH),
+      .ALMOST_EMPTY_THRESH(ALMOST_EMPTY_THRESH)
+  ) dut1 (
+      .wr_clk         (wr_clk),
+      // .wr_rst         (rst),
+      .rst            (rst),
+      .wr_en          (wr_en),
+      .wr_data        (wr_data),
+      .wr_full        (wr_full1),
+      .wr_almost_full (wr_almost_full1),
+      .wr_cnt         (wr_cnt1),
+      .rd_clk         (rd_clk),
+      // .rd_rst         (rst),
+      .rd_en          (rd_en),
+      .rd_data        (rd_data1),
+      .rd_cnt         (rd_cnt1),
+      .rd_empty       (rd_empty1),
+      .rd_almost_empty(rd_almost_empty1)
   );
 
   // =========================================================================
@@ -202,6 +256,8 @@ module tb_async_fifo_fwft_reg_pow2;
     async_reset();
 
     // Latency и мгновенное появление на rd_data до rd_en
+    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
+    #1ps;
     write_word(16'hA5A5);
 
     fork
@@ -265,6 +321,8 @@ module tb_async_fifo_fwft_reg_pow2;
   task automatic test_boundaries_and_thresholds();
     $display("\n--- RUNNING: 3. Boundary Volumes & Thresholds ---");
     async_reset();
+    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
+    #1ps;
 
     for (int i = 0; i < DEPTH; i++) begin
       write_word(16'hB000 + i);
@@ -306,56 +364,209 @@ module tb_async_fifo_fwft_reg_pow2;
           "rd_almost_empty failed to assert at threshold");
   endtask
 
-  // 4. Непрерывные потоки (Continuous & Concurrent Streaming)
-  task automatic test_concurrent_streaming();
-    $display("\n--- RUNNING: 4. Continuous & Concurrent Streaming ---");
+  // =========================================================================
+  // task automatic test_concurrent_streaming();
+  //   logic [DATA_W-1:0] val;
+
+  //   $display("\n--- RUNNING: 4. Continuous & Concurrent Streaming ---");
+
+  //   // =========================================================================
+  //   // 4.1. Прозрачное прохождение (Pass-Through)
+  //   // Непрерывная запись и чтение. FIFO не переполняется.
+  //   // =========================================================================
+  //   async_reset();
+  //   fork
+  //     begin  // Домен записи
+  //       for (int i = 0; i < 100; i++) begin
+  //         write_word(16'hD000 + i);
+  //       end
+  //     end
+  //     begin  // Домен чтения
+  //       for (int i = 0; i < 100; i++) begin
+  //         read_word(val);
+  //         check(val == (16'hD000 + i), "Pass-Through Data", $sformatf(
+  //               "Exp: %0x, Got: %0x", 16'hD000 + i, val));
+  //       end
+  //     end
+  //   join
+
+  //   // =========================================================================
+  //   // 4.2. Чтение и запись при "Почти полном" (DEPTH - 1)
+  //   // =========================================================================
+  //   async_reset();
+  //   // Заполняем FIFO до (DEPTH - 1)
+  //   for (int i = 0; i < DEPTH - 1; i++) begin
+  //     write_word(16'hE000 + i);
+  //   end
+
+  //   // Даем время указателям синхронизироваться между доменами
+  //   repeat (10) @(posedge rd_clk);
+  //   repeat (10) @(posedge wr_clk);
+
+  //   // Генерируем одновременный запрос на чтение и запись
+  //   fork
+  //     begin  // Домен записи
+  //       @(posedge wr_clk);
+  //       wr_en   = 1'b1;
+  //       wr_data = 16'hE999;
+  //       @(posedge wr_clk);
+  //       wr_en = 1'b0;
+  //     end
+  //     begin  // Домен чтения
+  //       @(posedge rd_clk);
+  //       val   = rd_data;  // В FWFT данные уже на шине до rd_en
+  //       rd_en = 1'b1;
+  //       @(posedge rd_clk);
+  //       rd_en = 1'b0;
+  //     end
+  //   join
+
+  //   // Проверяем, что прочиталось самое первое слово (старое)
+  //   check(val == 16'hE000, "Almost Full: Read correct old word", "First word corrupted");
+
+  //   // Чтобы убедиться, что FIFO не заблокировалось и новое слово принято,
+  //   // вычитываем все оставшиеся данные и проверяем, что последним выйдет 16'hE999
+  //   for (int i = 1; i < DEPTH - 1; i++) begin
+  //     read_word(val);
+  //   end
+  //   read_word(val);
+  //   check(val == 16'hE999, "Almost Full: Write successful", "New word E999 was lost or locked");
+
+  //   // =========================================================================
+  //   // 4.3. Чтение и запись при "Почти пустом" (1 слово)
+  //   // =========================================================================
+  //   async_reset();
+  //   write_word(16'hF111);
+
+  //   // Ждем, пока слово прорастет в домен чтения и появится на rd_data (для FWFT)
+  //   repeat (10) @(posedge rd_clk);
+
+  //   fork
+  //     begin  // Домен записи
+  //       @(posedge wr_clk);
+  //       wr_en   = 1'b1;
+  //       wr_data = 16'hF222;
+  //       @(posedge wr_clk);
+  //       wr_en = 1'b0;
+  //     end
+  //     begin  // Домен чтения
+  //       @(posedge rd_clk);
+  //       val   = rd_data;
+  //       rd_en = 1'b1;
+  //       @(posedge rd_clk);
+  //       rd_en = 1'b0;
+  //     end
+  //   join
+
+  //   // Проверяем, что вычиталось старое слово
+  //   check(val == 16'hF111, "Almost Empty: Read correct", "First word F111 mismatch");
+
+  //   // Дожидаемся синхронизации нового слова и вычитываем его
+  //   repeat (10) @(posedge rd_clk);
+  //   read_word(val);
+  //   check(val == 16'hF222, "Almost Empty: Write successful",
+  //         "Second word F222 lost. Pointers messed up.");
+
+  // endtask
+  // 4. Сложные коллизии в асинхронных доменах
+  task automatic test_concurrent_edge_cases();
+    $display("\n--- RUNNING: 4. Concurrent R/W at Boundaries ---");
     async_reset();
 
+    // ---------------------------------------------------------
+    // ТЕСТ А: Чтение и запись при "Полном" (Full)
+    // ---------------------------------------------------------
+    for (int i = 0; i < DEPTH; i++) begin
+      write_word(16'hE000 + i);
+    end
+
+    // Даем время указателю записи дойти до домена чтения
+    repeat (5) @(posedge rd_clk);
+    check(wr_full == 1'b1, "Full State", "FIFO not full after DEPTH writes");
+
+    // Одновременный старт R/W в разных доменах
     fork
-      begin
-        for (int i = 0; i < 50; i++) begin
-          write_word(16'hD000 + i);
-        end
+      begin  // Домен ЧТЕНИЯ
+        @(posedge rd_clk);
+        #1ps;
+        rd_en = 1'b1;
+        check(rd_data == 16'hE000, "Full R/W: Read Oldest", "FWFT read data mismatch on collision");
+        @(posedge rd_clk);
+        #1ps;
+        rd_en = 1'b0;
       end
-      begin
-        for (int i = 0; i < 50; i++) begin
-          logic [DATA_W-1:0] val;
-          read_word(val);
-          check(val == (16'hD000 + i), "Pass-Through Data Check", "Data corrupted in pass-through");
-        end
+      begin  // Домен ЗАПИСИ
+        @(posedge wr_clk);
+        #1ps;
+        wr_en   = 1'b1;
+        wr_data = 16'hE999;
+        // В классическом FIFO эта запись будет проигнорирована, так как wr_full еще равен 1.
+        // Если ваша архитектура поддерживает одновременный R/W при full, снимите этот if.
+        if (!wr_full) golden_queue.push_back(16'hE999);
+        @(posedge wr_clk);
+        #1ps;
+        wr_en = 1'b0;
       end
     join
 
-    async_reset();
-    for (int i = 0; i < DEPTH; i++) write_word(16'hE000 + i);
+    // Даем перекрестным указателям Грея обновиться (CDC)
     repeat (5) @(posedge wr_clk);
-
-    @(posedge wr_clk);
-    #1ps;
-    wr_en   = 1;
-    wr_data = 16'hE999;
-    rd_en   = 1;
-    @(posedge wr_clk);
-    #1ps;
-    wr_en = 0;
-    rd_en = 0;
-
-    repeat (5) @(posedge wr_clk);
-    check(!wr_full || wr_full, "Full Concurrent R/W", "FIFO locked up during full R/W");
-
-    async_reset();
-    write_word(16'hF111);
     repeat (5) @(posedge rd_clk);
 
+    // Вычитываем остаток, чтобы проверить целостность
+    for (int i = 1; i < DEPTH; i++) begin
+      logic [DATA_W-1:0] val;
+      read_word(val);
+      check(val == (16'hE000 + i), "Full R/W: Data Integrity",
+            "Data corrupted after full R/W collision");
+    end
+
+    // ---------------------------------------------------------
+    // ТЕСТ Б: Чтение и запись при "Почти пустом" (1 слово)
+    // ---------------------------------------------------------
+    async_reset();
+
+    write_word(16'hF111);
+    // Ждем, пока слово "упадет" в домен чтения (характерно для FWFT)
+    repeat (5) @(posedge rd_clk);
+    check(rd_empty == 1'b0, "1-Word State", "FIFO empty flag stuck");
+
     fork
-      write_word(16'hF222);
-      begin
-        logic [DATA_W-1:0] tmp;
-        read_word(tmp);
+      begin  // Домен ЧТЕНИЯ
+        @(posedge rd_clk);
+        #1ps;
+        rd_en = 1'b1;
+        check(rd_data == 16'hF111, "Almost Empty: Read Old", "FWFT read data mismatch");
+        @(posedge rd_clk);
+        #1ps;
+        rd_en = 1'b0;
+      end
+      begin  // Домен ЗАПИСИ
+        @(posedge wr_clk);
+        #1ps;
+        wr_en   = 1'b1;
+        wr_data = 16'hF222;
+        golden_queue.push_back(16'hF222);
+        @(posedge wr_clk);
+        #1ps;
+        wr_en = 1'b0;
       end
     join
-    check(wr_cnt >= 0, "Almost Empty Concurrent R/W", "Counters went negative or corrupted");
+
+    // Сразу после коллизии rd_empty может мигнуть в 1, так как указатель чтения сдвинулся,
+    // а указатель записи (для hF222) еще летит через CDC.
+    // Ждем синхронизации:
+    repeat (5) @(posedge rd_clk);
+
+    // Теперь новое слово должно стабильно лежать на выходе FWFT
+    check(rd_empty == 1'b0, "Almost Empty: Recovery",
+          "FIFO failed to recover empty flag after CDC");
+    check(rd_data == 16'hF222, "Almost Empty: New Word FWFT",
+          "New word did not fall through correctly");
+
   endtask
+
+  // =========================================================================
 
   // 5. Асинхронные домены (CDC Stress)
   task automatic test_cdc_domains();
@@ -404,7 +615,7 @@ module tb_async_fifo_fwft_reg_pow2;
     #200ns;
 
     async_reset();
-    @(posedge wr_clk);
+    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
     #1ps;
 
     for (int i = 0; i < 20; i++) write_word(16'h3000 + i);
@@ -421,7 +632,7 @@ module tb_async_fifo_fwft_reg_pow2;
     logic [DATA_W-1:0] val;
     $display("\n--- RUNNING: 6. Safeguards (Overflow & Underflow) ---");
     async_reset();
-    @(posedge wr_clk);
+    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
     #1ps;
 
     for (int i = 0; i < DEPTH; i++) write_word(16'h7000 + i);
@@ -512,7 +723,7 @@ module tb_async_fifo_fwft_reg_pow2;
 
     // 7.2 Балансирование на грани (Threshold Dancing)
     async_reset();
-    @(posedge wr_clk);
+    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
     #1ps;
 
     for (int i = 0; i < ALMOST_FULL_THRESH; i++) write_word(16'hA000 + i);
@@ -534,7 +745,7 @@ module tb_async_fifo_fwft_reg_pow2;
     RD_CLK_PHASE = WR_CLK_PERIOD / 2.0;
     #100ns;
     async_reset();
-    @(posedge wr_clk);
+    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
     #1ps;
     write_word(16'h180D);
     repeat (5) @(posedge rd_clk);
@@ -658,7 +869,7 @@ module tb_async_fifo_fwft_reg_pow2;
 
     // 7.6 Паттерн "Адрес как данные" (Address as Data)
     async_reset();
-    @(posedge wr_clk);
+    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
     #1ps;
     for (int i = 0; i < DEPTH; i++) begin
       write_word(i);
@@ -683,7 +894,8 @@ module tb_async_fifo_fwft_reg_pow2;
     test_reset_and_init();
     test_fwft_spec();
     test_boundaries_and_thresholds();
-    test_concurrent_streaming();
+    // test_concurrent_streaming();
+    test_concurrent_edge_cases();
     test_cdc_domains();
     test_overflow_underflow();
     test_advanced_checks();
