@@ -18,44 +18,7 @@ module SimpleDualPortRAM #(
 
   localparam BYTE_COUNT = DATA_WIDTH / 8;
   localparam DEPTH      = 1 << ADDR_WIDTH;
-
-  //   (* ram_style = "block" *) reg [DATA_WIDTH-1:0] mem[0:DEPTH-1];
-
-  // integer i;
-
-  // always @(posedge clk) begin
-  //     // Write
-  //     if (wr_en) begin
-  //         for (i = 0; i < BYTE_COUNT; i = i + 1) begin
-  //             if (wr_byteenable[i]) begin
-  //                 mem[wr_addr][i*8 +: 8] <= wr_data[i*8 +: 8];
-  //             end
-  //         end
-  //     end
-
-  //     // Synchronous read
-  //     rd_data <= mem[rd_addr];
-  // end
-
   localparam BYTE_WIDTH = 8;
-
-
-  //   localparam BYTES_PER_WORD = DATA_WIDTH / BYTE_WIDTH;
-  //   integer i;
-
-  //   // Процесс записи с byte enable
-  //   always @(posedge clk) begin
-  //     if (wr_en) begin
-  //       for (i = 0; i < BYTES_PER_WORD; i = i + 1) begin
-  //         if (wr_byteenable[i])
-  //           mem[wr_addr][i*BYTE_WIDTH+:BYTE_WIDTH] <= wr_data[i*BYTE_WIDTH+:BYTE_WIDTH];
-  //       end
-  //     end
-  //   end
-
-  //   always @(posedge clk) rd_data <= mem[rd_addr];
-
-
 
   genvar i;
   generate
