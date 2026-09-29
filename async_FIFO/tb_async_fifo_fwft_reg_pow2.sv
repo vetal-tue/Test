@@ -354,8 +354,13 @@ module tb_async_fifo_fwft_reg_pow2;
     begin
       int safety_counter = 0;
       while (rd_cnt > ALMOST_EMPTY_THRESH && safety_counter < 100) begin
-        logic [DATA_W-1:0] dummy;
-        read_word(dummy);
+        logic [DATA_W-1:0] val_almost;
+        read_word(val_almost);
+        
+        // ДОБАВЛЕНО: Проверка читаемых данных при опустошении до ALMOST_EMPTY
+        check(val_almost == 16'(16'hC000 + safety_counter), "Almost Empty Drain Data Check", $sformatf(
+              "Expected 0x%04X, got 0x%04X at index %0d", 16'(16'hC000 + safety_counter), val_almost, safety_counter));
+              
         repeat (2) @(posedge rd_clk);
         safety_counter++;
       end
