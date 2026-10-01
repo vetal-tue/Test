@@ -52,6 +52,7 @@ module tb_async_fifo_fwft_reg_pow2;
   // Инстанцирование DUT
   // =========================================================================
   async_fifo_fwft_xilinx_style #(
+  // async_fifo_fwft_reg_pow2 #(
       .DATA_W(DATA_W),
       .ADDR_W(ADDR_W),
       .ALMOST_FULL_THRESH(ALMOST_FULL_THRESH),
@@ -59,6 +60,7 @@ module tb_async_fifo_fwft_reg_pow2;
   ) dut (
       .wr_clk         (wr_clk),
       .wr_rst         (rst),
+      // .rst         (rst),
       .wr_en          (wr_en),
       .wr_data        (wr_data),
       .wr_full        (wr_full),
@@ -337,7 +339,7 @@ module tb_async_fifo_fwft_reg_pow2;
       logic [DATA_W-1:0] val;
       read_word(val);
       check(val == (16'hB000 + i), "Data Integrity Full Drain", $sformatf(
-            "Expected 0x%04X, got 0x%04X at index %0d", 16'hB000 + i, val, i));
+            "Expected 0x%04X, got 0x%04X at index %0d", DATA_W'(16'hB000 + i), val, i));
     end
     repeat (3) @(posedge rd_clk);
     check(rd_empty == 1, "Full Drain Empty Check", "FIFO not empty after reading all items");
@@ -358,10 +360,10 @@ module tb_async_fifo_fwft_reg_pow2;
         read_word(val_almost);
 
         // ДОБАВЛЕНО: Проверка читаемых данных при опустошении до ALMOST_EMPTY
-        check(val_almost == 16'(16'hC000 + safety_counter), "Almost Empty Drain Data Check",
+        check(val_almost == DATA_W'(16'hC000 + safety_counter), "Almost Empty Drain Data Check",
               $sformatf(
               "Expected 0x%04X, got 0x%04X at index %0d",
-              16'(16'hC000 + safety_counter),
+              DATA_W'(16'hC000 + safety_counter),
               val_almost,
               safety_counter
               ));
@@ -374,110 +376,6 @@ module tb_async_fifo_fwft_reg_pow2;
           "rd_almost_empty failed to assert at threshold");
   endtask
 
-  // =========================================================================
-  // task automatic test_concurrent_streaming();
-  //   logic [DATA_W-1:0] val;
-
-  //   $display("\n--- RUNNING: 4. Continuous & Concurrent Streaming ---");
-
-  //   // =========================================================================
-  //   // 4.1. Прозрачное прохождение (Pass-Through)
-  //   // Непрерывная запись и чтение. FIFO не переполняется.
-  //   // =========================================================================
-  //   async_reset();
-  //   fork
-  //     begin  // Домен записи
-  //       for (int i = 0; i < 100; i++) begin
-  //         write_word(16'hD000 + i);
-  //       end
-  //     end
-  //     begin  // Домен чтения
-  //       for (int i = 0; i < 100; i++) begin
-  //         read_word(val);
-  //         check(val == (16'hD000 + i), "Pass-Through Data", $sformatf(
-  //               "Exp: %0x, Got: %0x", 16'hD000 + i, val));
-  //       end
-  //     end
-  //   join
-
-  //   // =========================================================================
-  //   // 4.2. Чтение и запись при "Почти полном" (DEPTH - 1)
-  //   // =========================================================================
-  //   async_reset();
-  //   // Заполняем FIFO до (DEPTH - 1)
-  //   for (int i = 0; i < DEPTH - 1; i++) begin
-  //     write_word(16'hE000 + i);
-  //   end
-
-  //   // Даем время указателям синхронизироваться между доменами
-  //   repeat (10) @(posedge rd_clk);
-  //   repeat (10) @(posedge wr_clk);
-
-  //   // Генерируем одновременный запрос на чтение и запись
-  //   fork
-  //     begin  // Домен записи
-  //       @(posedge wr_clk);
-  //       wr_en   = 1'b1;
-  //       wr_data = 16'hE999;
-  //       @(posedge wr_clk);
-  //       wr_en = 1'b0;
-  //     end
-  //     begin  // Домен чтения
-  //       @(posedge rd_clk);
-  //       val   = rd_data;  // В FWFT данные уже на шине до rd_en
-  //       rd_en = 1'b1;
-  //       @(posedge rd_clk);
-  //       rd_en = 1'b0;
-  //     end
-  //   join
-
-  //   // Проверяем, что прочиталось самое первое слово (старое)
-  //   check(val == 16'hE000, "Almost Full: Read correct old word", "First word corrupted");
-
-  //   // Чтобы убедиться, что FIFO не заблокировалось и новое слово принято,
-  //   // вычитываем все оставшиеся данные и проверяем, что последним выйдет 16'hE999
-  //   for (int i = 1; i < DEPTH - 1; i++) begin
-  //     read_word(val);
-  //   end
-  //   read_word(val);
-  //   check(val == 16'hE999, "Almost Full: Write successful", "New word E999 was lost or locked");
-
-  //   // =========================================================================
-  //   // 4.3. Чтение и запись при "Почти пустом" (1 слово)
-  //   // =========================================================================
-  //   async_reset();
-  //   write_word(16'hF111);
-
-  //   // Ждем, пока слово прорастет в домен чтения и появится на rd_data (для FWFT)
-  //   repeat (10) @(posedge rd_clk);
-
-  //   fork
-  //     begin  // Домен записи
-  //       @(posedge wr_clk);
-  //       wr_en   = 1'b1;
-  //       wr_data = 16'hF222;
-  //       @(posedge wr_clk);
-  //       wr_en = 1'b0;
-  //     end
-  //     begin  // Домен чтения
-  //       @(posedge rd_clk);
-  //       val   = rd_data;
-  //       rd_en = 1'b1;
-  //       @(posedge rd_clk);
-  //       rd_en = 1'b0;
-  //     end
-  //   join
-
-  //   // Проверяем, что вычиталось старое слово
-  //   check(val == 16'hF111, "Almost Empty: Read correct", "First word F111 mismatch");
-
-  //   // Дожидаемся синхронизации нового слова и вычитываем его
-  //   repeat (10) @(posedge rd_clk);
-  //   read_word(val);
-  //   check(val == 16'hF222, "Almost Empty: Write successful",
-  //         "Second word F222 lost. Pointers messed up.");
-
-  // endtask
   // 4. Сложные коллизии в асинхронных доменах
   task automatic test_concurrent_edge_cases();
     $display("\n--- RUNNING: 4. Concurrent R/W at Boundaries ---");
@@ -609,7 +507,7 @@ module tb_async_fifo_fwft_reg_pow2;
       read_word(val);
       if (val !== (16'h1000 + i)) begin
         $display("[FAIL at %0t] FastWr/SlowRd: exp 0x%04X got 0x%04X at idx=%0d", $time,
-                 16'h1000 + i, val, i);
+                 DATA_W'(16'h1000 + i), val, i);
         rd_errors++;
       end
     end
@@ -685,7 +583,7 @@ module tb_async_fifo_fwft_reg_pow2;
 
           if (val !== (16'h2000 + i)) begin
             $display("[FAIL at %0t] SlowWr/FastRd: idx=%0d exp=0x%04X got=0x%04X", $time, i,
-                     16'h2000 + i, val);
+                     DATA_W'(16'h2000 + i), val);
             rd_errors++;
           end
         end
@@ -792,7 +690,7 @@ module tb_async_fifo_fwft_reg_pow2;
 
           if (val !== exp_val) begin
             $display("[FAIL at %0t] Drift A: DATA MISMATCH idx=%0d Exp=0x%04X Got=0x%04X", $time,
-                     i, exp_val, val);
+                     i, DATA_W'(exp_val), val);
             test_fail_cnt++;
             rd_errors++;
           end
@@ -866,7 +764,7 @@ module tb_async_fifo_fwft_reg_pow2;
 
           if (val !== exp_val) begin
             $display("[FAIL at %0t] Drift B: DATA MISMATCH idx=%0d Exp=0x%04X Got=0x%04X", $time,
-                     i, exp_val, val);
+                     i, DATA_W'(exp_val), val);
             test_fail_cnt++;
             rd_errors++;
           end
@@ -1255,7 +1153,7 @@ module tb_async_fifo_fwft_reg_pow2;
           // Инвариант №4: порядок и целостность данных
           if (val !== expected_stream[i]) begin
             $display("[FAIL at %0t] TD: DATA MISMATCH idx=%0d Exp=0x%04X Got=0x%04X", $time, i,
-                     expected_stream[i], val);
+                     DATA_W'(expected_stream[i]), val);
             test_fail_cnt++;
             rd_errors++;
           end
