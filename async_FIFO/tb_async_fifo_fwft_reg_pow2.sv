@@ -97,28 +97,28 @@ module tb_async_fifo_fwft_reg_pow2;
   // );
 
 
-  async_fifo_fwft_reg_pow2_4 #(
-      .DATA_W(DATA_W),
-      .ADDR_W(ADDR_W),
-      .ALMOST_FULL_THRESH(ALMOST_FULL_THRESH),
-      .ALMOST_EMPTY_THRESH(ALMOST_EMPTY_THRESH)
-  ) dut1 (
-      .wr_clk         (wr_clk),
-      // .wr_rst         (rst),
-      .rst            (rst),
-      .wr_en          (wr_en),
-      .wr_data        (wr_data),
-      .wr_full        (wr_full1),
-      .wr_almost_full (wr_almost_full1),
-      .wr_cnt         (wr_cnt1),
-      .rd_clk         (rd_clk),
-      // .rd_rst         (rst),
-      .rd_en          (rd_en),
-      .rd_data        (rd_data1),
-      .rd_cnt         (rd_cnt1),
-      .rd_empty       (rd_empty1),
-      .rd_almost_empty(rd_almost_empty1)
-  );
+  // async_fifo_fwft_reg_pow2_4 #(
+  //     .DATA_W(DATA_W),
+  //     .ADDR_W(ADDR_W),
+  //     .ALMOST_FULL_THRESH(ALMOST_FULL_THRESH),
+  //     .ALMOST_EMPTY_THRESH(ALMOST_EMPTY_THRESH)
+  // ) dut1 (
+  //     .wr_clk         (wr_clk),
+  //     // .wr_rst         (rst),
+  //     .rst            (rst),
+  //     .wr_en          (wr_en),
+  //     .wr_data        (wr_data),
+  //     .wr_full        (wr_full1),
+  //     .wr_almost_full (wr_almost_full1),
+  //     .wr_cnt         (wr_cnt1),
+  //     .rd_clk         (rd_clk),
+  //     // .rd_rst         (rst),
+  //     .rd_en          (rd_en),
+  //     .rd_data        (rd_data1),
+  //     .rd_cnt         (rd_cnt1),
+  //     .rd_empty       (rd_empty1),
+  //     .rd_almost_empty(rd_almost_empty1)
+  // );
 
   // =========================================================================
   // Генерация clocks
@@ -356,11 +356,16 @@ module tb_async_fifo_fwft_reg_pow2;
       while (rd_cnt > ALMOST_EMPTY_THRESH && safety_counter < 100) begin
         logic [DATA_W-1:0] val_almost;
         read_word(val_almost);
-        
+
         // ДОБАВЛЕНО: Проверка читаемых данных при опустошении до ALMOST_EMPTY
-        check(val_almost == 16'(16'hC000 + safety_counter), "Almost Empty Drain Data Check", $sformatf(
-              "Expected 0x%04X, got 0x%04X at index %0d", 16'(16'hC000 + safety_counter), val_almost, safety_counter));
-              
+        check(val_almost == 16'(16'hC000 + safety_counter), "Almost Empty Drain Data Check",
+              $sformatf(
+              "Expected 0x%04X, got 0x%04X at index %0d",
+              16'(16'hC000 + safety_counter),
+              val_almost,
+              safety_counter
+              ));
+
         repeat (2) @(posedge rd_clk);
         safety_counter++;
       end
@@ -575,60 +580,316 @@ module tb_async_fifo_fwft_reg_pow2;
 
   // 5. Асинхронные домены (CDC Stress)
   task automatic test_cdc_domains();
+    // ---- ВСЕ объявления в начале task-а (требование Icarus) ----
     logic [DATA_W-1:0] val;
+    int                rd_errors;
+    int                order_errors;
+    int                empty_glitch;
+    int                rd_total;
+
     $display("\n--- RUNNING: 5. Asynchronous Domains (CDC) ---");
 
+    // =========================================================
+    // 5.1 Fast Write / Slow Read
+    // =========================================================
     WR_CLK_PERIOD = 10.0;
     RD_CLK_PERIOD = 100.0;
     #200ns;
     async_reset();
+    @(posedge wr_clk);
+    #1ps;
+
+    rd_errors    = 0;
+    order_errors = 0;
 
     for (int i = 0; i < 8; i++) write_word(16'h1000 + i);
-    repeat (5) @(rd_clk);
+    repeat (5) @(posedge rd_clk);
 
     for (int i = 0; i < 8; i++) begin
       read_word(val);
-      check(val == (16'h1000 + i), "Fast Write Slow Read", "Data mismatch in slow read domain");
+      if (val !== (16'h1000 + i)) begin
+        $display("[FAIL at %0t] FastWr/SlowRd: exp 0x%04X got 0x%04X at idx=%0d", $time,
+                 16'h1000 + i, val, i);
+        rd_errors++;
+      end
     end
 
+    check(rd_errors == 0, "Fast Write Slow Read Data Integrity", $sformatf(
+          "%0d mismatches out of 8", rd_errors));
+
+    repeat (5) @(posedge rd_clk);
+    check(rd_empty === 1'b1 && rd_cnt == 0 && wr_cnt == 0, "Fast Write Slow Read Final Empty",
+          $sformatf("rd_empty=%0b rd_cnt=%0d wr_cnt=%0d", rd_empty, rd_cnt, wr_cnt));
+
+    // =========================================================
+    // 5.2 Slow Write / Fast Read
+    //     WR_CLK_PERIOD = 100 нс, RD_CLK_PERIOD = 10 нс.
+    //     Reader висит на rd_empty, пока writer не «протолкнёт» слово
+    //     через CDC. Проверяем порядок/целостность КАЖДОГО слова
+    //     и что rd_empty не мигает во время ожидания.
+    // =========================================================
     WR_CLK_PERIOD = 100.0;
     RD_CLK_PERIOD = 10.0;
     #200ns;
     async_reset();
+    @(posedge wr_clk);
+    #1ps;
+
+    rd_errors    = 0;
+    order_errors = 0;
+    empty_glitch = 0;
+    rd_total     = 0;
 
     fork
-      begin
+      // ------------------- PRODUCER (wr_clk @ 100 нс) -------------------
+      begin : slow_writer
         for (int i = 0; i < 5; i++) begin
           write_word(16'h2000 + i);
+          // Даём reader'у время увидеть слово в его домене
           repeat (2) @(posedge wr_clk);
         end
       end
-      begin
+
+      // ------------------- CONSUMER (rd_clk @ 10 нс) --------------------
+      begin : fast_reader
         for (int i = 0; i < 5; i++) begin
-          while (rd_empty) begin
+          int to;
+          to = 0;
+          // Ждём появления слова. Пока ждём — контролируем, что rd_empty
+          // не «дёргается» (0 → 1 → 0) без продвижения указателя чтения.
+          while (rd_empty && to < 2000) begin
             @(posedge rd_clk);
             #1ps;
+            to++;
+            // sanity: rd_empty не может самопроизвольно упасть до прихода
+            // слова — если упал, следующая проверка val поймает мусор.
           end
-          check(!rd_empty, "Slow Write Fast Read Glitch Check", "rd_empty glitched");
+
+          if (to >= 2000) begin
+            $display("[FAIL at %0t] SlowWr/FastRd: timeout waiting for word idx=%0d", $time, i);
+            test_fail_cnt++;
+            break;
+          end
+
+          // Дополнительная страховка: rd_empty должен быть 0 ровно тогда,
+          // когда на шине лежит валидное слово (FWFT-контракт).
+          if (rd_empty !== 1'b0) begin
+            $display("[FAIL at %0t] SlowWr/FastRd: rd_empty=%0b when data present", $time,
+                     rd_empty);
+            empty_glitch++;
+          end
+
+          // Читаем и СРАЗУ проверяем значение
           read_word(val);
+          rd_total++;
+
+          if (val !== (16'h2000 + i)) begin
+            $display("[FAIL at %0t] SlowWr/FastRd: idx=%0d exp=0x%04X got=0x%04X", $time, i,
+                     16'h2000 + i, val);
+            rd_errors++;
+          end
         end
       end
     join
 
+    check(rd_total == 5, "Slow Write Fast Read: All words consumed", $sformatf(
+          "exp 5, got %0d", rd_total));
+    check(rd_errors == 0, "Slow Write Fast Read: Data & Order Integrity", $sformatf(
+          "%0d mismatches out of 5", rd_errors));
+    check(empty_glitch == 0, "Slow Write Fast Read: rd_empty Consistency", $sformatf(
+          "%0d violations", empty_glitch));
+
+    // Финальная зачистка: FIFO должно быть пусто, счётчики — 0
+    repeat (10) @(posedge rd_clk);
+    check(rd_empty === 1'b1 && rd_cnt == 0 && wr_cnt == 0, "Slow Write Fast Read: Final Empty",
+          $sformatf("rd_empty=%0b rd_cnt=%0d wr_cnt=%0d", rd_empty, rd_cnt, wr_cnt));
+
+  endtask
+
+  // =========================================================================
+  // 5.4 Near Frequencies Drift
+  // Периоды клоков отличаются на 0.01 нс ⇒ фаза медленно проползает 360°
+  // (beat period ≈ 10 µs). Одновременный streaming в обоих доменах
+  // стрессирует CDC на ВСЕХ относительных фазах.
+  // Проверяется: порядок, целостность, отсутствие overflow/underflow,
+  // границы счётчиков, финальное опустошение FIFO.
+  // =========================================================================
+  task automatic test_near_freq_drift();
+    localparam int N_WORDS = 300;
+
+    logic [DATA_W-1:0] val;
+    logic [DATA_W-1:0] exp_val;
+    int                rd_errors;
+    int                wr_cnt_errors;
+    int                rd_cnt_errors;
+    int                rd_total;
+    int                wr_total;
+    real               saved_wr;
+    real               saved_rd;
+
+    $display("\n--- RUNNING: 5.4 Near Frequencies Drift ---");
+
+    saved_wr = WR_CLK_PERIOD;
+    saved_rd = RD_CLK_PERIOD;
+
+    // =========================================================
+    // CASE A: wr_clk чуть быстрее (10.000 vs 10.010 нс)
+    // =========================================================
     WR_CLK_PERIOD = 10.000;
     RD_CLK_PERIOD = 10.010;
     #200ns;
 
+    rd_errors     = 0;
+    wr_cnt_errors = 0;
+    rd_cnt_errors = 0;
+    rd_total      = 0;
+    wr_total      = 0;
+
     async_reset();
-    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
+    @(posedge wr_clk);
     #1ps;
 
-    for (int i = 0; i < 20; i++) write_word(16'h3000 + i);
-    repeat (10) @(posedge rd_clk);
-    check(rd_cnt > 0, "Near Frequencies Drift", "FIFO pointers corrupted under phase drift");
+    // Предзаполняем половину, чтобы reader не залипал на rd_empty на старте
+    for (int i = 0; i < DEPTH / 2; i++) write_word(16'h3000 + i);
 
-    WR_CLK_PERIOD = 10.0;
-    RD_CLK_PERIOD = 10.0;
+    fork
+      // ---------- PRODUCER (wr_clk) ----------
+      begin : drift_writer_A
+        for (int i = 0; i < N_WORDS; i++) begin
+          write_word(16'h3100 + i);
+          wr_total++;
+
+          if (wr_cnt > DEPTH) begin
+            $display("[FAIL at %0t] Drift A: OVERFLOW wr_cnt=%0d", $time, wr_cnt);
+            test_fail_cnt++;
+            wr_cnt_errors++;
+          end
+          if (wr_full !== 1'b1 && wr_cnt == DEPTH) begin
+            $display("[FAIL at %0t] Drift A: wr_full=0 at wr_cnt=DEPTH", $time);
+            test_fail_cnt++;
+            wr_cnt_errors++;
+          end
+        end
+      end
+
+      // ---------- CONSUMER (rd_clk) ----------
+      begin : drift_reader_A
+        for (int i = 0; i < DEPTH / 2 + N_WORDS; i++) begin
+          read_word(val);
+          rd_total++;
+
+          if (rd_cnt > DEPTH) begin
+            $display("[FAIL at %0t] Drift A: rd_cnt=%0d", $time, rd_cnt);
+            test_fail_cnt++;
+            rd_cnt_errors++;
+          end
+
+          if (i < DEPTH / 2) begin
+            exp_val = 16'h3000 + i;  // prefill
+          end else begin
+            exp_val = 16'h3100 + (i - DEPTH / 2);  // concurrent stream
+          end
+
+          if (val !== exp_val) begin
+            $display("[FAIL at %0t] Drift A: DATA MISMATCH idx=%0d Exp=0x%04X Got=0x%04X", $time,
+                     i, exp_val, val);
+            test_fail_cnt++;
+            rd_errors++;
+          end
+        end
+      end
+    join
+
+    check(rd_total == DEPTH / 2 + N_WORDS, "Drift A: All reads executed", $sformatf(
+          "exp %0d got %0d", DEPTH / 2 + N_WORDS, rd_total));
+    check(wr_total == N_WORDS, "Drift A: All writes executed", $sformatf(
+          "exp %0d got %0d", N_WORDS, wr_total));
+    check(rd_errors == 0, "Drift A: Data & Order Integrity", $sformatf(
+          "%0d mismatches in %0d words", rd_errors, rd_total));
+    check(wr_cnt_errors == 0, "Drift A: No Overflow / wr_full Consistency", $sformatf(
+          "%0d violations", wr_cnt_errors));
+    check(rd_cnt_errors == 0, "Drift A: rd_cnt Bounds", $sformatf("%0d violations", rd_cnt_errors));
+
+    repeat (10) @(posedge rd_clk);
+    check(rd_empty === 1'b1 && rd_cnt == 0, "Drift A: Final Empty", $sformatf(
+          "rd_empty=%0b rd_cnt=%0d", rd_empty, rd_cnt));
+
+    // =========================================================
+    // CASE B: rd_clk чуть быстрее (10.010 vs 10.000 нс)
+    // =========================================================
+    WR_CLK_PERIOD = 10.010;
+    RD_CLK_PERIOD = 10.000;
+    #200ns;
+
+    rd_errors     = 0;
+    wr_cnt_errors = 0;
+    rd_cnt_errors = 0;
+    rd_total      = 0;
+    wr_total      = 0;
+
+    async_reset();
+    @(posedge wr_clk);
+    #1ps;
+
+    for (int i = 0; i < DEPTH / 2; i++) write_word(16'h4000 + i);
+
+    fork
+      begin : drift_writer_B
+        for (int i = 0; i < N_WORDS; i++) begin
+          write_word(16'h4100 + i);
+          wr_total++;
+
+          if (wr_cnt > DEPTH) begin
+            $display("[FAIL at %0t] Drift B: OVERFLOW wr_cnt=%0d", $time, wr_cnt);
+            test_fail_cnt++;
+            wr_cnt_errors++;
+          end
+        end
+      end
+
+      begin : drift_reader_B
+        for (int i = 0; i < DEPTH / 2 + N_WORDS; i++) begin
+          read_word(val);
+          rd_total++;
+
+          if (rd_cnt > DEPTH) begin
+            $display("[FAIL at %0t] Drift B: rd_cnt=%0d", $time, rd_cnt);
+            test_fail_cnt++;
+            rd_cnt_errors++;
+          end
+
+          if (i < DEPTH / 2) begin
+            exp_val = 16'h4000 + i;
+          end else begin
+            exp_val = 16'h4100 + (i - DEPTH / 2);
+          end
+
+          if (val !== exp_val) begin
+            $display("[FAIL at %0t] Drift B: DATA MISMATCH idx=%0d Exp=0x%04X Got=0x%04X", $time,
+                     i, exp_val, val);
+            test_fail_cnt++;
+            rd_errors++;
+          end
+        end
+      end
+    join
+
+    check(rd_total == DEPTH / 2 + N_WORDS, "Drift B: All reads executed", $sformatf(
+          "exp %0d got %0d", DEPTH / 2 + N_WORDS, rd_total));
+    check(wr_total == N_WORDS, "Drift B: All writes executed", $sformatf(
+          "exp %0d got %0d", N_WORDS, wr_total));
+    check(rd_errors == 0, "Drift B: Data & Order Integrity", $sformatf(
+          "%0d mismatches in %0d words", rd_errors, rd_total));
+    check(wr_cnt_errors == 0, "Drift B: No Overflow", $sformatf("%0d violations", wr_cnt_errors));
+    check(rd_cnt_errors == 0, "Drift B: rd_cnt Bounds", $sformatf("%0d violations", rd_cnt_errors));
+
+    repeat (10) @(posedge rd_clk);
+    check(rd_empty === 1'b1 && rd_cnt == 0, "Drift B: Final Empty", $sformatf(
+          "rd_empty=%0b rd_cnt=%0d", rd_empty, rd_cnt));
+
+    // --- Restore ---
+    WR_CLK_PERIOD = saved_wr;
+    RD_CLK_PERIOD = saved_rd;
     #100ns;
   endtask
 
@@ -726,26 +987,6 @@ module tb_async_fifo_fwft_reg_pow2;
       end
     join
 
-    // 7.2 Балансирование на грани (Threshold Dancing)
-    async_reset();
-    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
-    #1ps;
-
-    for (int i = 0; i < ALMOST_FULL_THRESH; i++) write_word(16'hA000 + i);
-    repeat (5) @(posedge wr_clk);
-
-    for (int i = 0; i < 20; i++) begin
-      @(posedge wr_clk);
-      #1ps;
-      wr_en   = 1;
-      wr_data = 16'h8000 + i;
-      rd_en   = 1;
-      check(wr_almost_full == 1, "Threshold Dancing Almost Full",
-            "Glitch detected on wr_almost_full");
-    end
-    wr_en = 0;
-    rd_en = 0;
-
     // 7.3 Фазовый сдвиг 180°
     RD_CLK_PHASE = WR_CLK_PERIOD / 2.0;
     #100ns;
@@ -820,19 +1061,14 @@ module tb_async_fifo_fwft_reg_pow2;
     //   end
     // join
     fork
-      // -----------------------------------------------------------------------
-      // ПОТОК ЗАПИСИ (Producer): Пишет потоком, защищен от wr_full при DATA_W > DEPTH
-      // -----------------------------------------------------------------------
+      // -------- PRODUCER --------
       begin
-        // Явное выравнивание по фронту wr_clk перед первой записью!
         @(posedge wr_clk);
         #1ps;
 
         for (int b = 0; b < DATA_W; b++) begin
           int timeout_cnt = 0;
 
-          // Если DATA_W > DEPTH, FIFO переполнится.
-          // Ждем, пока поток чтения вычитает данные и CDC-синхронизатор сбросит wr_full.
           while (wr_full && timeout_cnt < 500) begin
             @(posedge wr_clk);
             #1ps;
@@ -848,7 +1084,7 @@ module tb_async_fifo_fwft_reg_pow2;
           end
 
           wr_en   = 1'b1;
-          wr_data = (1'b1 << b);
+          wr_data = (DATA_W'(1'b1) << b);  // <-- БЫЛО (1'b1 << b)
 
           @(posedge wr_clk);
           #1ps;
@@ -857,17 +1093,17 @@ module tb_async_fifo_fwft_reg_pow2;
         wr_data = '0;
       end
 
-      // -----------------------------------------------------------------------
-      // ПОТОК ЧТЕНИЯ (Consumer): Вычитывает параллельно и освобождает место
-      // -----------------------------------------------------------------------
+      // -------- CONSUMER --------
       begin
         for (int b = 0; b < DATA_W; b++) begin
           logic [DATA_W-1:0] val;
-
           read_word(val);
 
-          check(val == (1'b1 << b), "Walking 1 Bus Integrity", $sformatf(
-                "Bit integrity error at bit %0d", b));
+          check(
+              val == (DATA_W'(1'b1) << b),  // <-- БЫЛО (1'b1 << b)
+              "Walking 1 Bus Integrity", $sformatf(
+              "Bit integrity error at bit %0d (exp=0x%04X got=0x%04X)", b, (DATA_W'(1'b1) << b), val
+              ));
         end
       end
     join
@@ -888,6 +1124,170 @@ module tb_async_fifo_fwft_reg_pow2;
     end
   endtask
 
+  // 7.2 Балансирование на грани (Threshold Dancing)
+  // Держим FIFO в районе порога almost_full, одновременно пишем и читаем
+  // в СВОИХ клоковых доменах. Проверяется:
+  //   * сохранение порядка и целостности ВСЕХ данных (не только флага!);
+  //   * отсутствие переполнения (wr_cnt никогда не превышает DEPTH);
+  //   * отсутствие выхода rd_cnt за пределы [0, DEPTH];
+  //   * стабильность wr_almost_full, пока уровень FIFO >= порога;
+  //   * что фактически записано/прочитано ровно столько, сколько запланировано;
+  //   * что после "танца" FIFO корректно опустошается.
+  task automatic test_threshold_dancing();
+    localparam int DANCE_ITERS = 30;
+    localparam int TOTAL_READS = ALMOST_FULL_THRESH + DANCE_ITERS;
+
+    // ---- ВСЕ объявления — в начале task-а, до любого исполняемого кода ----
+    logic [DATA_W-1:0] expected_stream[TOTAL_READS];
+    logic [DATA_W-1:0] val;
+    int                to_wr;
+    int                to_rd;
+    int                rd_errors;
+    int                ovf_errors;
+    int                af_errors;
+    int                cnt_errors;
+    int                rd_total;
+    int                wr_total;
+
+    $display("\n--- RUNNING: 7.2 Threshold Dancing ---");
+
+    // ---- Инициализация (уже исполняемый код) ----
+    rd_errors  = 0;
+    ovf_errors = 0;
+    af_errors  = 0;
+    cnt_errors = 0;
+    rd_total   = 0;
+    wr_total   = 0;
+
+    async_reset();
+    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
+    #1ps;
+
+    // ------- 1. Предзаполняем FIFO до порога almost_full -------
+    for (int i = 0; i < ALMOST_FULL_THRESH; i++) begin
+      write_word(16'hA000 + i);
+    end
+
+    repeat (10) @(posedge wr_clk);
+    repeat (10) @(posedge rd_clk);
+
+    check(wr_almost_full === 1'b1, "TD: Setup almost_full", $sformatf(
+          "wr_almost_full=0 при уровне %0d (wr_cnt=%0d)", ALMOST_FULL_THRESH, wr_cnt));
+    check(wr_full === 1'b0, "TD: Setup not-full",
+          "wr_full неожиданно взведён до начала танца");
+
+    // ------- 2. Заранее известная последовательность чтения -------
+    for (int i = 0; i < ALMOST_FULL_THRESH; i++) expected_stream[i] = 16'hA000 + i;
+    for (int i = 0; i < DANCE_ITERS; i++) expected_stream[ALMOST_FULL_THRESH+i] = 16'h8000 + i;
+
+    // ------- 3. Параллельные потоки в СВОИХ доменах -------
+    fork
+      // ================= PRODUCER (wr_clk) =================
+      begin : dance_writer
+        for (int i = 0; i < DANCE_ITERS; i++) begin
+          to_wr = 0;
+          while (wr_full && to_wr < 500) begin
+            @(posedge wr_clk);
+            #1ps;
+            to_wr++;
+          end
+          if (to_wr >= 500) begin
+            $display("[FAIL at %0t] TD: producer застрял на wr_full (iter=%0d)", $time, i);
+            test_fail_cnt++;
+            break;
+          end
+
+          wr_en   = 1'b1;
+          wr_data = 16'h8000 + i;
+          wr_total++;
+
+          @(posedge wr_clk);
+          #1ps;
+          wr_en = 1'b0;
+
+          // Инвариант №1: переполнения нет
+          if (wr_cnt > DEPTH) begin
+            $display("[FAIL at %0t] TD: OVERFLOW wr_cnt=%0d > DEPTH=%0d", $time, wr_cnt, DEPTH);
+            test_fail_cnt++;
+            ovf_errors++;
+          end
+
+          // Инвариант №2: wr_almost_full не «дрожит», пока wr_cnt >= порога
+          if (wr_cnt >= ALMOST_FULL_THRESH && wr_almost_full !== 1'b1) begin
+            $display("[FAIL at %0t] TD: wr_almost_full glitch (wr_cnt=%0d)", $time, wr_cnt);
+            test_fail_cnt++;
+            af_errors++;
+          end
+        end
+      end
+
+      // ================= CONSUMER (rd_clk) =================
+      begin : dance_reader
+        for (int i = 0; i < TOTAL_READS; i++) begin
+          to_rd = 0;
+          while (rd_empty && to_rd < 1000) begin
+            @(posedge rd_clk);
+            #1ps;
+            to_rd++;
+          end
+          if (to_rd >= 1000) begin
+            $display("[FAIL at %0t] TD: consumer timeout at %0d/%0d", $time, i, TOTAL_READS);
+            test_fail_cnt++;
+            break;
+          end
+
+          // FWFT: данные валидны ДО rd_en
+          val   = rd_data;
+
+          // rd_en управляется ИЗ ДОМЕНА rd_clk
+          rd_en = 1'b1;
+          @(posedge rd_clk);
+          #1ps;
+          rd_en = 1'b0;
+
+          // Инвариант №3: счётчик чтения в допустимых границах
+          if (rd_cnt > DEPTH) begin
+            $display("[FAIL at %0t] TD: rd_cnt=%0d вне [0, %0d]", $time, rd_cnt, DEPTH);
+            test_fail_cnt++;
+            cnt_errors++;
+          end
+
+          // Инвариант №4: порядок и целостность данных
+          if (val !== expected_stream[i]) begin
+            $display("[FAIL at %0t] TD: DATA MISMATCH idx=%0d Exp=0x%04X Got=0x%04X", $time, i,
+                     expected_stream[i], val);
+            test_fail_cnt++;
+            rd_errors++;
+          end
+
+          rd_total++;
+        end
+      end
+    join
+
+    // ------- 4. Итоговые проверки -------
+    check(rd_total == TOTAL_READS, "TD: All reads executed", $sformatf(
+          "Ожидалось %0d чтений, получено %0d", TOTAL_READS, rd_total));
+    check(wr_total == DANCE_ITERS, "TD: All writes executed", $sformatf(
+          "Ожидалось %0d записей, получено %0d", DANCE_ITERS, wr_total));
+    check(rd_errors == 0, "TD: Data & Order Integrity", $sformatf(
+          "%0d расхождений в потоке данных", rd_errors));
+    check(ovf_errors == 0, "TD: No Overflow", $sformatf(
+          "%0d событий переполнения", ovf_errors));
+    check(cnt_errors == 0, "TD: rd_cnt Invariant", $sformatf(
+          "%0d нарушений диапазона rd_cnt", cnt_errors));
+    check(af_errors == 0, "TD: wr_almost_full Stability", $sformatf(
+          "%0d glitch-ей при wr_cnt >= %0d", af_errors, ALMOST_FULL_THRESH));
+
+    // ------- 5. FIFO должно корректно опустеть -------
+    repeat (10) @(posedge rd_clk);
+    check(rd_empty === 1'b1, "TD: Final Empty", $sformatf(
+          "FIFO не опустело после танца (rd_cnt=%0d)", rd_cnt));
+
+    wr_en = 1'b0;
+    rd_en = 1'b0;
+  endtask
+
   // =========================================================================
   // Запуск всех тестов
   // =========================================================================
@@ -902,8 +1302,10 @@ module tb_async_fifo_fwft_reg_pow2;
     // test_concurrent_streaming();
     test_concurrent_edge_cases();
     test_cdc_domains();
+    test_near_freq_drift();
     test_overflow_underflow();
     test_advanced_checks();
+    test_threshold_dancing();
 
     $display("\n=================================================");
     $display(" VERIFICATION SUMMARY: ");
