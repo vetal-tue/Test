@@ -620,6 +620,7 @@ module tb_async_fifo_fwft_reg_pow2;
 
     // Финальная зачистка: FIFO должно быть пусто, счётчики — 0
     repeat (10) @(posedge rd_clk);
+    #1ps;
     check(rd_empty === 1'b1 && rd_cnt == 0 && wr_cnt == 0, "Slow Write Fast Read: Final Empty",
           $sformatf("rd_empty=%0b rd_cnt=%0d wr_cnt=%0d", rd_empty, rd_cnt, wr_cnt));
 
