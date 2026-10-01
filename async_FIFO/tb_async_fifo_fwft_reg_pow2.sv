@@ -75,6 +75,127 @@ module tb_async_fifo_fwft_reg_pow2;
       .rd_almost_empty(rd_almost_empty)
   );
 
+  // ============================================================
+  // ASSERTIONS / CHECKS
+  // ============================================================
+  // always @(posedge rd_clk) begin
+  //   if (!rst) begin
+  //     assert (!(rd_empty && rd_en))
+  //     else $error("[%0t] READ while FIFO EMPTY", $time);
+  //   end
+  // end
+
+  // Assertion 1 — wr_cnt никогда не больше DEPTH
+  always @(posedge wr_clk) begin
+    if (!rst) begin
+      assert (wr_cnt <= DEPTH)
+      else $error("[ASSERT] wr_cnt overflow: wr_cnt=%0d DEPTH=%0d", wr_cnt, DEPTH);
+    end
+  end
+
+  // Assertion 2 — rd_cnt никогда не больше DEPTH
+  always @(posedge rd_clk) begin
+    if (!rst) begin
+      assert (rd_cnt <= DEPTH)
+      else $error("[ASSERT] rd_cnt overflow: rd_cnt=%0d DEPTH=%0d", rd_cnt, DEPTH);
+    end
+  end
+
+  // Assertion 3 — FULL соответствует максимальному wr_cnt
+  always @(posedge wr_clk) begin
+    if (!rst) begin
+      if (wr_cnt === DEPTH) begin
+        assert (wr_full === 1'b1)
+        else $error("[ASSERT] wr_cnt=DEPTH but wr_full=0: wr_cnt=%0d", wr_cnt);
+      end
+    end
+  end
+
+  // Assertion 4 — EMPTY соответствует нулевому rd_cnt
+  always @(posedge rd_clk) begin
+    if (!rst) begin
+      if (rd_cnt === 0) begin
+        assert (rd_empty === 1'b1)
+        else $error("[ASSERT] rd_cnt=0 but rd_empty=0");
+      end
+    end
+  end
+
+  // Assertion 5 — reset должен очистить write-side state
+  always @(posedge wr_clk) begin
+    if (rst) begin
+      assert (wr_cnt === 0)
+      else $error("[ASSERT] wr_cnt != 0 during reset: %0d", wr_cnt);
+
+      assert (wr_full === 1'b0)
+      else $error("[ASSERT] wr_full != 0 during reset");
+    end
+  end
+
+  // Assertion 6 — reset должен очистить read-side state
+  always @(posedge rd_clk) begin
+    if (rst) begin
+      assert (rd_cnt === 0)
+      else $error("[ASSERT] rd_cnt != 0 during reset: %0d", rd_cnt);
+
+      assert (rd_empty === 1'b1)
+      else $error("[ASSERT] rd_empty != 1 during reset");
+    end
+  end
+
+  // Assertion 7 — rd_empty не должен быть X/Z после reset
+  always @(posedge rd_clk) begin
+    if (!rst) begin
+      assert ((rd_empty === 1'b0) || (rd_empty === 1'b1))
+      else $error("[ASSERT] rd_empty is X/Z: %b", rd_empty);
+    end
+  end
+
+  // Assertion 8 — wr_full не должен быть X/Z
+  always @(posedge wr_clk) begin
+    if (!rst) begin
+      assert ((wr_full === 1'b0) || (wr_full === 1'b1))
+      else $error("[ASSERT] wr_full is X/Z: %b", wr_full);
+    end
+  end
+
+  logic [DATA_W-1:0] rd_data_prev;
+  logic              rd_data_prev_valid;
+
+  always @(posedge rd_clk) begin
+    if (rst) begin
+      rd_data_prev_valid = 1'b0;
+    end else begin
+      if (rd_data_prev_valid && !rd_empty && !rd_en) begin
+
+        assert (rd_data === rd_data_prev)
+        else
+          $error(
+              "[ASSERT] FWFT data changed while stalled: old=0x%0h new=0x%0h", rd_data_prev, rd_data
+          );
+      end
+
+      rd_data_prev       = rd_data;
+      rd_data_prev_valid = 1'b1;
+    end
+  end
+
+  // Assertion 9 — rd_data valid при FWFT !empty
+  always @(posedge rd_clk) begin
+    if (!rst && !rd_empty) begin
+      assert ((^rd_data) !== 1'bx)
+      else $error("[ASSERT] FWFT says data valid but rd_data is X/Z");
+    end
+  end
+
+  // Assertion 10 — FULL и EMPTY не должны быть одновременно 1 (для DEPTH > 0)
+  always @(posedge wr_clk) begin
+    if (!rst) begin
+      assert (!(wr_full && rd_empty))
+      else $error("[ASSERT] FIFO is simultaneously FULL and EMPTY");
+    end
+  end
+
   // async_fifo_fwft_bram_pow2_3 #(
   //     .DATA_W(DATA_W),
   //     .ADDR_W(ADDR_W),
