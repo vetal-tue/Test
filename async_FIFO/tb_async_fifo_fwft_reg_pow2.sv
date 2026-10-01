@@ -52,7 +52,7 @@ module tb_async_fifo_fwft_reg_pow2;
   // Инстанцирование DUT
   // =========================================================================
   async_fifo_fwft_xilinx_style #(
-  // async_fifo_fwft_reg_pow2 #(
+      // async_fifo_fwft_reg_pow2 #(
       .DATA_W(DATA_W),
       .ADDR_W(ADDR_W),
       .ALMOST_FULL_THRESH(ALMOST_FULL_THRESH),
@@ -130,11 +130,38 @@ module tb_async_fifo_fwft_reg_pow2;
     forever #(WR_CLK_PERIOD / 2.0) wr_clk = ~wr_clk;
   end
 
-  initial begin
-    rd_clk = 0;
-    #(RD_CLK_PHASE);
-    forever #(RD_CLK_PERIOD / 2.0) rd_clk = ~rd_clk;
+  // initial begin
+  //   rd_clk = 0;
+  //   #(RD_CLK_PHASE);
+  //   forever #(RD_CLK_PERIOD / 2.0) rd_clk = ~rd_clk;
+  // end
+
+  // =========================================================================
+  // Генерация rd_clk с возможностью перезапуска с новой фазой.
+  // Перезапуск делается через disable внешнего именованного блока —
+  // это идиоматический способ "restartable clock" в SystemVerilog,
+  // корректно работающий в Icarus.
+  // =========================================================================
+  initial begin : rd_clk_gen_blk
+    rd_clk = 1'b0;
+    forever begin : rd_clk_outer
+      rd_clk = 1'b0;
+      #(RD_CLK_PHASE);
+      forever begin : rd_clk_inner
+        #(RD_CLK_PERIOD / 2.0);
+        rd_clk = ~rd_clk;
+      end
+    end
   end
+
+  // привязка момента перезапуска rd_clk по posedge wr_clk.
+  task automatic restart_rd_clk_aligned(real phase_ns);
+    @(posedge wr_clk);
+    #1ps;
+    RD_CLK_PHASE = phase_ns;
+    disable rd_clk_gen_blk.rd_clk_outer;  // <-- просто disable, без event
+    #100ns;  // даём новому драйверу поработать
+  endtask
 
   initial begin
     $dumpfile("tb_async_fifo_fwft_reg_pow2");
@@ -186,6 +213,13 @@ module tb_async_fifo_fwft_reg_pow2;
       timeout_cnt++;
     end
 
+    if (timeout_cnt >= 200) begin
+      $display("[FAIL at %0t] write_word timeout: wr_full stuck", $time);
+      test_fail_cnt++;
+      // data = 'x;
+      return;
+    end
+
     wr_en   = 1'b1;
     wr_data = data;
     if (!wr_full) golden_queue.push_back(data);
@@ -202,6 +236,13 @@ module tb_async_fifo_fwft_reg_pow2;
       @(posedge rd_clk);
       #1ps;
       timeout_cnt++;
+    end
+
+    if (timeout_cnt >= 200) begin
+      $display("[FAIL at %0t] read_word timeout: rd_empty stuck", $time);
+      test_fail_cnt++;
+      data = 'x;
+      return;
     end
 
     data  = rd_data;
@@ -338,6 +379,198 @@ module tb_async_fifo_fwft_reg_pow2;
     // Даем 1 такт на обновление регистров и флага rd_empty
     repeat (2) @(posedge rd_clk);
     check(rd_empty == 1, "Pipelining Empty Check", "FIFO not empty after pipeline drain");
+  endtask
+
+  // =========================================================================
+  // 2.1 FWFT Data Hold Contract
+  // Пока rd_empty == 0 и rd_en == 0, rd_data не должен меняться.
+  // =========================================================================
+  task automatic test_fwft_data_hold();
+    logic [DATA_W-1:0] held_data;
+    int                hold_cycles;
+
+    $display("\n--- RUNNING: 2.1 FWFT Data Hold Contract ---");
+
+    async_reset();
+    @(posedge wr_clk);
+    #1ps;
+
+    write_word(16'h1111);
+    write_word(16'h2222);
+    write_word(16'h3333);
+
+    repeat (5) @(posedge rd_clk);
+
+    check(rd_empty === 1'b0, "FWFT DATA HOLD: initial not empty", $sformatf(
+          "rd_empty=%0b after 3 writes", rd_empty));
+
+    if (rd_empty === 1'b0) begin
+      rd_en     = 1'b0;
+      wr_en     = 1'b0;
+      held_data = rd_data;
+
+      for (hold_cycles = 0; hold_cycles < 20; hold_cycles++) begin
+        @(posedge rd_clk);
+        #1ps;
+
+        check(rd_empty === 1'b0, "FWFT DATA HOLD: EMPTY", $sformatf(
+              "cycle %0d: FIFO unexpectedly became empty", hold_cycles));
+
+        check(rd_data === held_data, "FWFT DATA HOLD: rd_data changed without rd_en", $sformatf(
+              "cycle %0d: expected=0x%04X got=0x%04X", hold_cycles, held_data, rd_data));
+      end
+    end
+
+    // async_reset();
+  endtask
+
+  // =========================================================================
+  // 2.3 FWFT Almost-Always-Empty
+  //
+  // Сценарий:
+  //   writer:  write, wait, write, wait, write, wait, ...
+  //   reader:  rd_en = 1 непрерывно
+  //
+  // Ожидаемая картина:
+  //   A -> EMPTY -> B -> EMPTY -> C -> EMPTY -> ...
+  //
+  // Проверяется:
+  //   * CDC слова в домен чтения (EMPTY->NONEMPTY);
+  //   * корректная генерация rd_empty после вычитывания последнего слова;
+  //   * FWFT-prefetch: слово появляется на rd_data без какого-либо rd_en;
+  //   * повторный переход EMPTY->NONEMPTY для каждого нового слова;
+  //   * целостность и порядок данных.
+  // =========================================================================
+  task automatic test_fwft_almost_always_empty();
+    localparam int N_BURSTS = 8;
+
+    logic [DATA_W-1:0] val;
+    int                rd_errors;
+    int                got_words;
+    int                empty_windows;
+    int                to;
+
+    $display("\n--- RUNNING: 2.3 FWFT Almost-Always-Empty (reader rd_en=1) ---");
+
+    rd_errors     = 0;
+    got_words     = 0;
+    empty_windows = 0;
+
+    async_reset();
+    @(posedge wr_clk);
+    #1ps;
+
+    // Стартовое состояние: FIFO пусто, читатель готов
+    rd_en = 1'b0;
+    repeat (3) @(posedge rd_clk);
+    check(rd_empty === 1'b1, "FWFT ALMOST-EMPTY: initial empty", $sformatf(
+          "rd_empty=%0b at start", rd_empty));
+
+    // Непрерывный rd_en=1 в домене чтения
+    @(posedge rd_clk);
+    #1ps;
+    rd_en = 1'b1;
+
+    fork
+      // ================== WRITER: write, wait, write, wait, ... ==================
+      begin : aae_writer
+        for (int i = 0; i < N_BURSTS; i++) begin
+          // Перед следующей записью убеждаемся, что FIFO уже опустело
+          if (i > 0) begin
+            int wto;
+            wto = 0;
+            while (wr_cnt != 0 && wto < 2000) begin
+              @(posedge wr_clk);
+              #1ps;
+              wto++;
+            end
+            if (wto >= 2000) begin
+              $display(
+                  "[FAIL at %0t] FWFT ALMOST-EMPTY: writer drain timeout (iter=%0d, wr_cnt=%0d)",
+                  $time, i, wr_cnt);
+              test_fail_cnt++;
+              break;
+            end
+            // Доп. пауза: гарантирует, что reader уже увидел EMPTY между словами
+            repeat (10) @(posedge wr_clk);
+          end
+
+          write_word(16'h5000 + i);
+
+          // Пауза, чтобы reader успел прочитать слово и FIFO снова опустело
+          repeat (30) @(posedge wr_clk);
+        end
+      end
+
+      // ================== READER: rd_en=1 постоянно ==================
+      begin : aae_reader
+        for (int i = 0; i < N_BURSTS; i++) begin
+          // 1) Ждём появления слова: rd_empty 1 -> 0. rd_en НЕ трогаем.
+          to = 0;
+          while (rd_empty && to < 5000) begin
+            @(posedge rd_clk);
+            #1ps;
+            to++;
+          end
+          if (to >= 5000) begin
+            $display("[FAIL at %0t] FWFT ALMOST-EMPTY: reader timeout waiting for word %0d", $time,
+                     i);
+            test_fail_cnt++;
+            break;
+          end
+
+          // 2) FWFT: rd_data валиден прямо сейчас, rd_en уже = 1
+          val = rd_data;
+          got_words++;
+
+          if (val !== (16'h5000 + i)) begin
+            $display("[FAIL at %0t] FWFT ALMOST-EMPTY: idx=%0d exp=0x%04X got=0x%04X", $time, i,
+                     DATA_W'(16'h5000 + i), val);
+            rd_errors++;
+          end
+
+          // 3) Следующий фронт: rd_en=1 вычитывает слово
+          @(posedge rd_clk);
+          #1ps;
+
+          // 4) FIFO должно уйти в EMPTY (данных больше нет, а rd_en всё ещё = 1)
+          to = 0;
+          while (!rd_empty && to < 5000) begin
+            @(posedge rd_clk);
+            #1ps;
+            to++;
+          end
+          if (to >= 5000) begin
+            $display("[FAIL at %0t] FWFT ALMOST-EMPTY: rd_empty never re-asserted after word %0d",
+                     $time, i);
+            test_fail_cnt++;
+            break;
+          end
+          empty_windows++;
+        end
+
+        // Снимаем rd_en
+        @(posedge rd_clk);
+        #1ps;
+        rd_en = 1'b0;
+      end
+    join
+
+    check(got_words == N_BURSTS, "FWFT ALMOST-EMPTY: all words received", $sformatf(
+          "expected %0d, got %0d", N_BURSTS, got_words));
+    check(rd_errors == 0, "FWFT ALMOST-EMPTY: data integrity", $sformatf("%0d mismatches", rd_errors
+          ));
+    check(empty_windows == N_BURSTS, "FWFT ALMOST-EMPTY: EMPTY->NONEMPTY->EMPTY per word",
+          $sformatf("expected %0d empty windows, observed %0d", N_BURSTS, empty_windows));
+
+    // Финальная зачистка
+    repeat (10) @(posedge rd_clk);
+    #1ps;
+    check(rd_empty === 1'b1 && rd_cnt == 0 && wr_cnt == 0, "FWFT ALMOST-EMPTY: final empty",
+          $sformatf("rd_empty=%0b rd_cnt=%0d wr_cnt=%0d", rd_empty, rd_cnt, wr_cnt));
+
+    rd_en = 1'b0;
+    async_reset();
   endtask
 
   // 3. Граничные объемы и счетчики
@@ -914,17 +1147,33 @@ module tb_async_fifo_fwft_reg_pow2;
     join
 
     // 7.3 Фазовый сдвиг 180°
+    // RD_CLK_PHASE = WR_CLK_PERIOD / 2.0;
+    // #100ns;
+    // async_reset();
+    // @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
+    // #1ps;
+    // write_word(16'h180D);
+    // repeat (5) @(posedge rd_clk);
+    // check(rd_data == 16'h180D, "180 Degree Phase Shift CDC",
+    //       "CDC failed at 180 degree phase shift");
+    // RD_CLK_PHASE = 0.0;
+    // #100ns;
+
+    // 7.3 Фазовый сдвиг 180°: rd_clk идёт в противофазе с wr_clk
     RD_CLK_PHASE = WR_CLK_PERIOD / 2.0;
-    #100ns;
+    restart_rd_clk_aligned(RD_CLK_PHASE);
+
     async_reset();
-    @(posedge wr_clk);  // Явное выравнивание по фронту wr_clk
+    @(posedge wr_clk);
     #1ps;
     write_word(16'h180D);
     repeat (5) @(posedge rd_clk);
     check(rd_data == 16'h180D, "180 Degree Phase Shift CDC",
           "CDC failed at 180 degree phase shift");
+
+    // Восстанавливаем нормальный rd_clk для последующих тестов
     RD_CLK_PHASE = 0.0;
-    #100ns;
+    restart_rd_clk_aligned(RD_CLK_PHASE);
 
     // 7.4 Сброс под нагрузкой
     begin
@@ -1231,6 +1480,8 @@ module tb_async_fifo_fwft_reg_pow2;
 
     test_reset_and_init();
     test_fwft_spec();
+    test_fwft_data_hold();
+    test_fwft_almost_always_empty();
     test_boundaries_and_thresholds();
     // test_concurrent_streaming();
     test_concurrent_edge_cases();
