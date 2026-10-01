@@ -1067,7 +1067,7 @@ module tb_async_fifo_fwft_reg_pow2;
     end
 
     repeat (10) @(posedge wr_clk);
-    repeat (10) @(posedge rd_clk);
+    // repeat (10) @(posedge rd_clk);
 
     check(wr_almost_full === 1'b1, "TD: Setup almost_full", $sformatf(
           "wr_almost_full=0 при уровне %0d (wr_cnt=%0d)", ALMOST_FULL_THRESH, wr_cnt));
