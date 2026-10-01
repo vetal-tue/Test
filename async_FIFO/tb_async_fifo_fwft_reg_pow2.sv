@@ -211,6 +211,27 @@ module tb_async_fifo_fwft_reg_pow2;
     #1ps;
     rd_en = 1'b0;
   endtask
+  // task automatic read_word(output logic [DATA_W-1:0] data);
+  //   int timeout_cnt = 0;
+
+  //   // 1. Ожидаем появления данных, если FIFO пусто
+  //   while (rd_empty && timeout_cnt < 200) begin
+  //     @(posedge rd_clk);
+  //     #1ps;
+  //     timeout_cnt++;
+  //   end
+
+  //   // 2. СТРОГО выравниваемся по фронту rd_clk перед выставлением rd_en
+  //   @(posedge rd_clk);
+  //   #1ps;
+  //   data  = rd_data; // В FWFT данные уже валидны на этом фронте
+  //   rd_en = 1'b1;
+
+  //   // 3. Держим rd_en ровно 1 такт rd_clk
+  //   @(posedge rd_clk);
+  //   #1ps;
+  //   rd_en = 1'b0;
+  // endtask
 
   // =========================================================================
   // ТЕСТОВЫЕ СЦЕНАРИИ
@@ -672,6 +693,9 @@ module tb_async_fifo_fwft_reg_pow2;
 
       // ---------- CONSUMER (rd_clk) ----------
       begin : drift_reader_A
+        // Предварительное выравнивание по домену чтения
+        @(posedge rd_clk);
+
         for (int i = 0; i < DEPTH / 2 + N_WORDS; i++) begin
           read_word(val);
           rd_total++;
@@ -746,6 +770,9 @@ module tb_async_fifo_fwft_reg_pow2;
       end
 
       begin : drift_reader_B
+        // Предварительное выравнивание по домену чтения
+        @(posedge rd_clk);
+
         for (int i = 0; i < DEPTH / 2 + N_WORDS; i++) begin
           read_word(val);
           rd_total++;
@@ -1121,6 +1148,10 @@ module tb_async_fifo_fwft_reg_pow2;
 
       // ================= CONSUMER (rd_clk) =================
       begin : dance_reader
+        // Предварительное выравнивание по домену чтения
+        @(posedge rd_clk);
+        #1ps;
+
         for (int i = 0; i < TOTAL_READS; i++) begin
           to_rd = 0;
           while (rd_empty && to_rd < 1000) begin
@@ -1138,7 +1169,10 @@ module tb_async_fifo_fwft_reg_pow2;
           val   = rd_data;
 
           // rd_en управляется ИЗ ДОМЕНА rd_clk
+          // Сигнал rd_en выставлен строго после posedge rd_clk + 1ps
           rd_en = 1'b1;
+
+          // Ждем следующий фронт, на котором RTL FIFO защелкнет чтение
           @(posedge rd_clk);
           #1ps;
           rd_en = 1'b0;
