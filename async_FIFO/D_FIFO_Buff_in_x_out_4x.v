@@ -10,7 +10,7 @@ module D_FIFO_Buff_in_x_out_4x #(
     input  wire                    rd_rst,
     input  wire                    D_FIFO_wr_en,
     input  wire [  FIFO_WIDTH-1:0] D_FIFO_wrdata,
-    output wire [ FIFO_ADDR_W:0] D_FIFO_wrcnt,
+    output wire [   FIFO_ADDR_W:0] D_FIFO_wrcnt,
     input  wire                    D_FIFO_rd_en,
     output wire [4*FIFO_WIDTH-1:0] D_FIFO_rd_data,
     output wire                    D_FIFO_wrfull,
@@ -28,8 +28,8 @@ module D_FIFO_Buff_in_x_out_4x #(
 
   wire                    fifo_wr_full;
   wire                    fifo_wr_almost_full;
-  wire [   FIFO_ADDR_W-2:0] fifo_rd_cnt;
-  wire [   FIFO_ADDR_W-2:0] fifo_wr_cnt;
+  wire [ FIFO_ADDR_W-2:0] fifo_rd_cnt;
+  wire [ FIFO_ADDR_W-2:0] fifo_wr_cnt;
 
   // Слово собирается из D_FIFO_wrdata (4-й слог) и уже накопленных 3 слогов
   wire [   OUT_WIDTH-1:0] fifo_wr_data = {D_FIFO_wrdata, wr_acc};
@@ -53,10 +53,9 @@ module D_FIFO_Buff_in_x_out_4x #(
   end
 
   // ───────── внутренняя FIFO теперь OUT_WIDTH-битная ─────────
-
   async_fifo_fwft_xilinx_style #(
       .DATA_W(OUT_WIDTH),
-      .ADDR_W(FIFO_ADDR_W-2)
+      .ADDR_W(FIFO_ADDR_W - 2)
   ) DATA_FIFO (
       .wr_clk         (wrclk),
       .wr_rst         (wr_rst),
@@ -77,7 +76,9 @@ module D_FIFO_Buff_in_x_out_4x #(
   // ───────── флаги/счётчики ─────────
   // «Жёсткий» full: FIFO полна И аккумулятор уже набрал 3 слога
   assign D_FIFO_wrfull    = fifo_wr_full && (wr_fill == 2'd3);
-  assign D_FIFO_wrafull   = fifo_wr_almost_full;
+  // assign D_FIFO_wrafull   = fifo_wr_almost_full;
+  // assign D_FIFO_wrafull   = fifo_wr_almost_full && (wr_fill >= 2'd2);
+  assign D_FIFO_wrafull = (D_FIFO_wrcnt >= 1 << FIFO_ADDR_W - 1);
   assign D_FIFO_rd_cnt_out = fifo_rd_cnt;
 
 endmodule
