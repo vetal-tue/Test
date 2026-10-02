@@ -1,6 +1,6 @@
 `timescale 1 ps / 1 ps
 
-module D_FIFO_Buff_in_out_2x #(
+module D_FIFO_Buff_in_2x_out_x #(
     parameter FIFO_WIDTH  = 64,
     parameter FIFO_ADDR_W = 8
 ) (
