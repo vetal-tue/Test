@@ -43,6 +43,7 @@ module D_FIFO_Buff_in_out_4x_C #(
   localparam S_Q1    = 3'd1;
   localparam S_Q2    = 3'd2;
   localparam S_Q3    = 3'd3;
+  localparam S_Q4    = 3'd4;
 
   // =========================================================================
   // Внутренний async FWFT FIFO
@@ -78,37 +79,55 @@ module D_FIFO_Buff_in_out_4x_C #(
   // Буфер одного полного слова FIFO
   // =========================================================================
 
-  reg [ FIFO_WIDTH-1:0] buf_word;
-  reg [  OUT_WIDTH-1:0] rd_data;
-  reg [            2:0] state;
+  reg [FIFO_WIDTH-1:0] buf_word;
+  reg [ OUT_WIDTH-1:0] rd_data;
+  reg [           2:0] state;
 
-  reg [FIFO_ADDR_W+2:0] D_FIFO_rdcnt_local;
+
 
   // =========================================================================
   // Выходы
   // =========================================================================
 
   assign D_FIFO_rd_empty = (state == S_EMPTY);
-  assign D_FIFO_rd_data = rd_data;
-  assign D_FIFO_rdcnt = D_FIFO_rdcnt_local;
+  assign D_FIFO_rd_data  = rd_data;
 
-  always @* begin
+//   reg [FIFO_ADDR_W+2:0] D_FIFO_rdcnt_local;
+  //   always @* begin
+  //     case (state)
+
+  //       S_EMPTY: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00};
+
+  //       S_Q1: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 4;
+
+  //       S_Q2: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 3;
+
+  //       S_Q3: D_FIFO_rdcnt = {fifo_rd_cnt, 2'b00} + 2;
+
+  //       S_Q4: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 1;
+
+  //       default: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00};
+
+  //     endcase
+  //   end
+  //    assign D_FIFO_rdcnt = D_FIFO_rdcnt_local;
+
+
+  // ─── сколько subword'ов уже лежит в локальном буфере ────────────────────
+  reg [2:0] subword_buf_cnt;
+  always @(*) begin
     case (state)
-
-      S_EMPTY: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00};
-
-      S_Q1: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 4;
-
-      S_Q2: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 3;
-
-      S_Q3: D_FIFO_rdcnt = {fifo_rd_cnt, 2'b00} + 2;
-
-      3'd4: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 1;
-
-      default: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00};
-
+      S_EMPTY: subword_buf_cnt = 3'd0;
+      S_Q1: subword_buf_cnt = 3'd4;
+      S_Q2: subword_buf_cnt = 3'd3;
+      S_Q3: subword_buf_cnt = 3'd2;
+      S_Q4: subword_buf_cnt = 3'd1;
+      default: subword_buf_cnt = 3'd0;
     endcase
   end
+  // ─── 64-битных слов в FIFO → 16-битных слов снаружи ─────────────────────
+  // rd_cnt_FIFO * 4 = {fifo_rd_cnt, 2'b00}
+  assign D_FIFO_rd_cnt_out = {fifo_rd_cnt, 2'b00} + subword_buf_cnt;
 
   // =========================================================================
   // Разбор 64 -> 16
@@ -187,7 +206,7 @@ module D_FIFO_Buff_in_out_4x_C #(
         S_Q3: begin
           if (D_FIFO_rd_en) begin
             rd_data <= buf_word[FIFO_WIDTH-1 : (3*OUT_WIDTH)];
-            state   <= 3'd4;
+            state   <= S_Q4;
           end
         end
 
@@ -204,7 +223,7 @@ module D_FIFO_Buff_in_out_4x_C #(
         //   если FIFO пуст - переходим в S_EMPTY.
         // =============================================================
 
-        3'd4: begin
+        S_Q4: begin
 
           if (D_FIFO_rd_en) begin
 
