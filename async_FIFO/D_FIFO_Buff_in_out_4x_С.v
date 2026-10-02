@@ -14,6 +14,7 @@ module D_FIFO_Buff_in_out_4x_C #(
     output wire [   FIFO_ADDR_W:0] D_FIFO_wrcnt,
     input  wire                    D_FIFO_rd_en,
     output wire [FIFO_WIDTH/4-1:0] D_FIFO_rd_data,
+    output wire [ FIFO_ADDR_W+2:0] D_FIFO_rdcnt,
     output wire                    D_FIFO_wrfull,
     output wire                    D_FIFO_wrafull,
     output wire                    D_FIFO_rd_empty
@@ -50,27 +51,25 @@ module D_FIFO_Buff_in_out_4x_C #(
   wire [FIFO_WIDTH-1:0] fifo_rd_data;
   wire                  fifo_rd_empty;
   reg                   fifo_rd_en;
+  wire [ FIFO_ADDR_W:0] fifo_rd_cnt;
 
   async_fifo_fwft_xilinx_style #(
       .DATA_W(FIFO_WIDTH),
       .ADDR_W(FIFO_ADDR_W)
   ) DATA_FIFO (
 
-      .wr_clk (wrclk),
-      .wr_rst (wr_rst),
-      .wr_en  (D_FIFO_wr_en),
-      .wr_data(D_FIFO_wrdata),
-      .wr_full(D_FIFO_wrfull),
-
-      .rd_clk  (rdclk),
-      .rd_rst  (rd_rst),
-      .rd_en   (fifo_rd_en),
-      .rd_data (fifo_rd_data),
-      .rd_empty(fifo_rd_empty),
-
-      .wr_cnt(D_FIFO_wrcnt),
-      .rd_cnt(),
-
+      .wr_clk         (wrclk),
+      .wr_rst         (wr_rst),
+      .wr_en          (D_FIFO_wr_en),
+      .wr_data        (D_FIFO_wrdata),
+      .wr_full        (D_FIFO_wrfull),
+      .rd_clk         (rdclk),
+      .rd_rst         (rd_rst),
+      .rd_en          (fifo_rd_en),
+      .rd_data        (fifo_rd_data),
+      .rd_empty       (fifo_rd_empty),
+      .wr_cnt         (D_FIFO_wrcnt),
+      .rd_cnt         (fifo_rd_cnt),
       .wr_almost_full (D_FIFO_wrafull),
       .rd_almost_empty()
   );
@@ -79,16 +78,37 @@ module D_FIFO_Buff_in_out_4x_C #(
   // Буфер одного полного слова FIFO
   // =========================================================================
 
-  reg [FIFO_WIDTH-1:0] buf_word;
-  reg [ OUT_WIDTH-1:0] rd_data;
-  reg [           2:0] state;
+  reg [ FIFO_WIDTH-1:0] buf_word;
+  reg [  OUT_WIDTH-1:0] rd_data;
+  reg [            2:0] state;
+
+  reg [FIFO_ADDR_W+2:0] D_FIFO_rdcnt_local;
 
   // =========================================================================
   // Выходы
   // =========================================================================
 
   assign D_FIFO_rd_empty = (state == S_EMPTY);
-  assign D_FIFO_rd_data  = rd_data;
+  assign D_FIFO_rd_data = rd_data;
+  assign D_FIFO_rdcnt = D_FIFO_rdcnt_local;
+
+  always @* begin
+    case (state)
+
+      S_EMPTY: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00};
+
+      S_Q1: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 4;
+
+      S_Q2: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 3;
+
+      S_Q3: D_FIFO_rdcnt = {fifo_rd_cnt, 2'b00} + 2;
+
+      3'd4: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00} + 1;
+
+      default: D_FIFO_rdcnt_local = {fifo_rd_cnt, 2'b00};
+
+    endcase
+  end
 
   // =========================================================================
   // Разбор 64 -> 16
