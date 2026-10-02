@@ -2,8 +2,7 @@
 
 module D_FIFO_Buff_in_out_2x #(
     parameter FIFO_WIDTH  = 64,
-    parameter FIFO_ADDR_W = 8,
-
+    parameter FIFO_ADDR_W = 8
 ) (
     input wire wrclk,
     input wire rdclk,
@@ -15,6 +14,7 @@ module D_FIFO_Buff_in_out_2x #(
     output wire [   FIFO_ADDR_W:0] D_FIFO_wrcnt,
     input  wire                    D_FIFO_rd_en,
     output wire [FIFO_WIDTH/4-1:0] D_FIFO_rd_data,
+    output wire [ FIFO_ADDR_W+1:0] D_FIFO_rdcnt,
     output wire                    D_FIFO_wrfull,
     output wire                    D_FIFO_wrafull,
     output wire                    D_FIFO_rd_empty
@@ -22,8 +22,9 @@ module D_FIFO_Buff_in_out_2x #(
 
   // ==============================================================================
 
-  wire [  FIFO_WIDTH-1:0] fifo_rd_data;
-  wire                      fifo_rd_empty;
+  wire [FIFO_WIDTH-1:0] fifo_rd_data;
+  wire                  fifo_rd_empty;
+  wire [ FIFO_ADDR_W:0] fifo_rd_cnt;
 
   async_fifo_fwft_xilinx_style #(
       .DATA_W(FIFO_WIDTH),
@@ -41,7 +42,7 @@ module D_FIFO_Buff_in_out_2x #(
       .rd_data        (fifo_rd_data),
       .rd_empty       (fifo_rd_empty),
       .wr_cnt         (D_FIFO_wrcnt),
-      .rd_cnt         (),
+      .rd_cnt         (fifo_rd_cnt),
       .wr_almost_full (D_FIFO_wrafull),
       .rd_almost_empty()
 
@@ -52,21 +53,37 @@ module D_FIFO_Buff_in_out_2x #(
   // state=0: нет данных (empty=1)
   // state=1: LOW_READY  — rd_data=low half, buf_high сохранён
   // state=2: HIGH_READY — rd_data=buf_high
-  reg [ 1:0] state;
+  reg [             1:0] state;
   reg [FIFO_WIDTH/2-1:0] buf_high;
-  reg        fifo_rd_en;
+  reg                    fifo_rd_en;
   reg [FIFO_WIDTH/2-1:0] rd_data;
+  reg [FIFO_ADDR_W+1:0] D_FIFO_rdcnt_local;
 
   localparam S_EMPTY = 2'd0, S_LOW = 2'd1, S_HIGH = 2'd2;
 
   assign D_FIFO_rd_empty = (state == S_EMPTY);
   assign D_FIFO_rd_data  = rd_data;
+  assign D_FIFO_rdcnt = D_FIFO_rdcnt_local;
+
+  always @* begin
+    case (state)
+
+      S_EMPTY: D_FIFO_rdcnt_local = {fifo_rd_cnt, 1'b0};
+
+      S_LOW: D_FIFO_rdcnt_local = {fifo_rd_cnt, 1'b0} + 2;
+
+      S_HIGH: D_FIFO_rdcnt_local = {fifo_rd_cnt, 1'b0} + 1;
+
+      default: D_FIFO_rdcnt_local = {fifo_rd_cnt, 1'b0};
+
+    endcase
+  end
 
   always @(posedge rdclk or posedge rd_rst) begin
     if (rd_rst) begin
       state      <= S_EMPTY;
-      rd_data    <= {FIFO_WIDTH/2{1'b0}};
-      buf_high   <= {FIFO_WIDTH/2{1'b0}};
+      rd_data    <= {FIFO_WIDTH / 2{1'b0}};
+      buf_high   <= {FIFO_WIDTH / 2{1'b0}};
       fifo_rd_en <= 1'b0;
     end else begin
       fifo_rd_en <= 1'b0;  // default
@@ -113,8 +130,8 @@ module D_FIFO_Buff_in_out_2x #(
 
         // ── Защита от некорректного состояния ───────────
         default: begin
-          rd_data    <= {FIFO_WIDTH/2{1'b0}};
-          buf_high   <= {FIFO_WIDTH/2{1'b0}};
+          rd_data    <= {FIFO_WIDTH / 2{1'b0}};
+          buf_high   <= {FIFO_WIDTH / 2{1'b0}};
           fifo_rd_en <= 1'b0;
           state      <= S_EMPTY;
         end
