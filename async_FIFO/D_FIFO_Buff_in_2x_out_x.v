@@ -13,7 +13,7 @@ module D_FIFO_Buff_in_2x_out_x #(
     input  wire [  FIFO_WIDTH-1:0] D_FIFO_wrdata,
     output wire [   FIFO_ADDR_W:0] D_FIFO_wrcnt,
     input  wire                    D_FIFO_rd_en,
-    output wire [FIFO_WIDTH/4-1:0] D_FIFO_rd_data,
+    output wire [FIFO_WIDTH/2-1:0] D_FIFO_rd_data,
     output wire [ FIFO_ADDR_W+1:0] D_FIFO_rd_cnt_out,
     output wire                    D_FIFO_wrfull,
     output wire                    D_FIFO_wrafull,
