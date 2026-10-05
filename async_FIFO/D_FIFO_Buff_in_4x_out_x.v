@@ -14,7 +14,7 @@ module D_FIFO_Buff_in_4x_out_x #(
     output wire [   FIFO_ADDR_W:0] D_FIFO_wrcnt,
     input  wire                    D_FIFO_rd_en,
     output wire [FIFO_WIDTH/4-1:0] D_FIFO_rd_data,
-    output wire [ FIFO_ADDR_W+2:0] D_FIFO_rdcnt,
+    output wire [ FIFO_ADDR_W+2:0] D_FIFO_rd_cnt_out,
     output wire                    D_FIFO_wrfull,
     output wire                    D_FIFO_wrafull,
     output wire                    D_FIFO_rd_empty
