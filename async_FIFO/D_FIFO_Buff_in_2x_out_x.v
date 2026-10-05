@@ -14,7 +14,7 @@ module D_FIFO_Buff_in_2x_out_x #(
     output wire [   FIFO_ADDR_W:0] D_FIFO_wrcnt,
     input  wire                    D_FIFO_rd_en,
     output wire [FIFO_WIDTH/4-1:0] D_FIFO_rd_data,
-    output wire [ FIFO_ADDR_W+1:0] D_FIFO_rdcnt,
+    output wire [ FIFO_ADDR_W+1:0] D_FIFO_rd_cnt_out,
     output wire                    D_FIFO_wrfull,
     output wire                    D_FIFO_wrafull,
     output wire                    D_FIFO_rd_empty
@@ -63,7 +63,7 @@ module D_FIFO_Buff_in_2x_out_x #(
 
   assign D_FIFO_rd_empty = (state == S_EMPTY);
   assign D_FIFO_rd_data  = rd_data;
-  assign D_FIFO_rdcnt = D_FIFO_rdcnt_local;
+  assign D_FIFO_rd_cnt_out = D_FIFO_rdcnt_local;
 
   always @* begin
     case (state)
