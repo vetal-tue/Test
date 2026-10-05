@@ -136,7 +136,7 @@ module async_fifo_fwft_xilinx_style #(
   wire push1 = stage0_valid && (!stage1_valid || rd_en);  // stage0 -> stage1
   wire pop1 = rd_en && stage1_valid;
 
-  // 🔥 ключ: prefetch в тот же такт что и shift
+  // prefetch в тот же такт что и shift
   wire do_prefetch = can_prefetch && (!stage0_valid || push1);
 
   // next-state (без конфликтов!)
