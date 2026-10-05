@@ -25,6 +25,7 @@ module D_FIFO_Buff_in_2x_out_x #(
   wire [FIFO_WIDTH-1:0] fifo_rd_data;
   wire                  fifo_rd_empty;
   wire [ FIFO_ADDR_W:0] fifo_rd_cnt;
+  reg                   fifo_rd_en;
 
   async_fifo_fwft_xilinx_style #(
       .DATA_W(FIFO_WIDTH),
@@ -55,14 +56,14 @@ module D_FIFO_Buff_in_2x_out_x #(
   // state=2: HIGH_READY — rd_data=buf_high
   reg [             1:0] state;
   reg [FIFO_WIDTH/2-1:0] buf_high;
-  reg                    fifo_rd_en;
+
   reg [FIFO_WIDTH/2-1:0] rd_data;
-  reg [FIFO_ADDR_W+1:0] D_FIFO_rdcnt_local;
+  reg [ FIFO_ADDR_W+1:0] D_FIFO_rdcnt_local;
 
   localparam S_EMPTY = 2'd0, S_LOW = 2'd1, S_HIGH = 2'd2;
 
   assign D_FIFO_rd_empty = (state == S_EMPTY);
-  assign D_FIFO_rd_data  = rd_data;
+  assign D_FIFO_rd_data = rd_data;
   assign D_FIFO_rd_cnt_out = D_FIFO_rdcnt_local;
 
   always @* begin
