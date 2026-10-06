@@ -159,14 +159,42 @@ module tb_async_fifo_fwft_reg_pow2;
     end
   end
 
+// ==============================
+  // logic [DATA_W-1:0] rd_data_prev;
+  // logic              rd_data_prev_valid;
+
+  // always @(posedge rd_clk) begin
+  //   if (rst) begin
+  //     rd_data_prev_valid = 1'b0;
+  //   end else begin
+  //     if (rd_data_prev_valid && !rd_empty && !rd_en) begin
+
+  //       assert (rd_data === rd_data_prev)
+  //       else
+  //         $error(
+  //             "[ASSERT] FWFT data changed while stalled: old=0x%0h new=0x%0h", rd_data_prev, rd_data
+  //         );
+  //     end
+
+  //     rd_data_prev       = rd_data;
+  //     rd_data_prev_valid = 1'b1;
+  //   end
+  // end
+  // ==============================
   logic [DATA_W-1:0] rd_data_prev;
   logic              rd_data_prev_valid;
+  logic              rd_en_prev;
 
   always @(posedge rd_clk) begin
     if (rst) begin
-      rd_data_prev_valid = 1'b0;
+      rd_data_prev       <= '0;
+      rd_data_prev_valid <= 1'b0;
+      rd_en_prev         <= 1'b0;
     end else begin
-      if (rd_data_prev_valid && !rd_empty && !rd_en) begin
+
+      // Проверяем, что данные не изменились за последний такт,
+      // если в предыдущем такте они были валидны и чтения не было.
+      if (rd_data_prev_valid && !rd_en_prev && !rd_empty) begin
 
         assert (rd_data === rd_data_prev)
         else
@@ -175,8 +203,10 @@ module tb_async_fifo_fwft_reg_pow2;
           );
       end
 
-      rd_data_prev       = rd_data;
-      rd_data_prev_valid = 1'b1;
+      // Запоминаем состояние текущего такта
+      rd_data_prev       <= rd_data;
+      rd_data_prev_valid <= !rd_empty;
+      rd_en_prev         <= rd_en;
     end
   end
 
