@@ -134,7 +134,7 @@ module V_TrueDualPortRAM #(
     // parameter integer DEPTH      = 16384,
     parameter integer ADDR_WIDTH = 14,
     parameter integer BYTE_SIZE  = 8,
-    parameter         WRITE_MODE = "READ_FIRST",
+    parameter         WRITE_MODE = "WRITE_FIRST",
     parameter         MEM_STYLE  = "M20K",   // "M20K" / "M10K" / "MLAB"
     parameter integer OUT_REG_A  = 1,
     parameter integer OUT_REG_B  = 1
@@ -215,8 +215,8 @@ module V_TrueDualPortRAM #(
         .clock1          (clkb),
         .data_a          (dina),
         .data_b          (dinb),
-        .wren_a          (|wea),      // общий write-enable для порта A
-        .wren_b          (|web),      // общий write-enable для порта B
+        .wren_a          (ena/*|wea*/),      // общий write-enable для порта A
+        .wren_b          (enb/*|web*/),      // общий write-enable для порта B
         .q_a             (douta),
         .q_b             (doutb),
         .aclr0           (1'b0),
@@ -225,8 +225,8 @@ module V_TrueDualPortRAM #(
         .address2_b      (1'b1),
         .addressstall_a  (1'b0),
         .addressstall_b  (1'b0),
-        .clocken0        (ena),       // ena/enb работают как clock enable
-        .clocken1        (enb),
+        .clocken0        (1'b1/*ena*/),       // ena/enb работают как clock enable
+        .clocken1        (1'b1/*enb*/),
         .clocken2        (1'b1),
         .clocken3        (1'b1),
         .eccencbypass    (1'b0),
