@@ -26,14 +26,14 @@ module V_TrueDualPortRAM #(
     input  wire                          clka,
     input  wire                          ena,
     input  wire [WIDTH/BYTE_SIZE-1:0]    wea,
-    input  wire [$clog2(DEPTH)-1:0]      addra,
+    input  wire [ADDR_WIDTH-1:0]      addra,
     input  wire [WIDTH-1:0]              dina,
     output reg  [WIDTH-1:0]              douta,
 
     input  wire                          clkb,
     input  wire                          enb,
     input  wire [WIDTH/BYTE_SIZE-1:0]    web,
-    input  wire [$clog2(DEPTH)-1:0]      addrb,
+    input  wire [ADDR_WIDTH-1:0]      addrb,
     input  wire [WIDTH-1:0]              dinb,
     output reg  [WIDTH-1:0]              doutb
 );
@@ -142,14 +142,14 @@ module V_TrueDualPortRAM #(
     input  wire                          clka,
     input  wire                          ena,
     input  wire [WIDTH/BYTE_SIZE-1:0]    wea,
-    input  wire [$clog2(DEPTH)-1:0]      addra,
+    input  wire [ADDR_WIDTH-1:0]      addra,
     input  wire [WIDTH-1:0]              dina,
     output wire [WIDTH-1:0]              douta,
 
     input  wire                          clkb,
     input  wire                          enb,
     input  wire [WIDTH/BYTE_SIZE-1:0]    web,
-    input  wire [$clog2(DEPTH)-1:0]      addrb,
+    input  wire [ADDR_WIDTH-1:0]      addrb,
     input  wire [WIDTH-1:0]              dinb,
     output wire [WIDTH-1:0]              doutb
 );
