@@ -39,7 +39,7 @@ module V_TrueDualPortRAM #(
 );
 
     // localparam integer ADDR_WIDTH = $clog2(DEPTH);
-      localparam integer DEPTH    = 1 << ADDR_WIDTH;    // глубина
+    localparam integer DEPTH    = 1 << ADDR_WIDTH;    // глубина
     localparam integer WE_WIDTH   = WIDTH / BYTE_SIZE;
 
     (* ram_style = MEM_STYLE *)
@@ -167,6 +167,7 @@ module V_TrueDualPortRAM #(
 // DONT_CARE — выходное значение не определено (аналог NO_CHANGE, но без гарантии удержания)
 // Режим OLD_DATA (аналог READ_FIRST) для M20K в True Dual-Port не поддерживается на аппаратном уровне.
 // Он доступен только для простого двухпортового режима (simple dual-port) или для других типов блоков (например, MLAB)
+
     localparam RDW_MODE_A = (WRITE_MODE == "WRITE_FIRST") ? "NEW_DATA_NO_NBE_READ" :
                                                         "DONT_CARE";
 
