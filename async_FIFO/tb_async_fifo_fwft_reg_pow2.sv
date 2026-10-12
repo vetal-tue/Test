@@ -51,23 +51,25 @@ module tb_async_fifo_fwft_reg_pow2;
   // =========================================================================
   // Инстанцирование DUT
   // =========================================================================
-  async_fifo_fwft_xilinx_style #(
+  // async_fifo_fwft_xilinx_style #(
+  async_fifo_fwft_reg_pow2_4 #(
       // async_fifo_fwft_reg_pow2 #(
+
       .DATA_W(DATA_W),
       .ADDR_W(ADDR_W),
       .ALMOST_FULL_THRESH(ALMOST_FULL_THRESH),
       .ALMOST_EMPTY_THRESH(ALMOST_EMPTY_THRESH)
   ) dut (
       .wr_clk         (wr_clk),
-      .wr_rst         (rst),
-      // .rst         (rst),
+      // .wr_rst         (rst),
+      .rst            (rst),
       .wr_en          (wr_en),
       .wr_data        (wr_data),
       .wr_full        (wr_full),
       .wr_almost_full (wr_almost_full),
       .wr_cnt         (wr_cnt),
       .rd_clk         (rd_clk),
-      .rd_rst         (rst),
+      // .rd_rst         (rst),
       .rd_en          (rd_en),
       .rd_data        (rd_data),
       .rd_cnt         (rd_cnt),
@@ -124,6 +126,7 @@ module tb_async_fifo_fwft_reg_pow2;
   // Assertion 5 — reset должен очистить write-side state
   always @(posedge wr_clk) begin
     if (rst) begin
+      #1ps;
       assert (wr_cnt === 0)
       else $error("[ASSERT] wr_cnt != 0 during reset: %0d", wr_cnt);
 
@@ -159,7 +162,7 @@ module tb_async_fifo_fwft_reg_pow2;
     end
   end
 
-// ==============================
+  // ==============================
   // logic [DATA_W-1:0] rd_data_prev;
   // logic              rd_data_prev_valid;
 
@@ -539,6 +542,8 @@ module tb_async_fifo_fwft_reg_pow2;
   task automatic test_fwft_data_hold();
     logic [DATA_W-1:0] held_data;
     int                hold_cycles;
+    int                hold_errors;
+    int                empty_errors;
 
     $display("\n--- RUNNING: 2.1 FWFT Data Hold Contract ---");
 
@@ -555,6 +560,9 @@ module tb_async_fifo_fwft_reg_pow2;
     check(rd_empty === 1'b0, "FWFT DATA HOLD: initial not empty", $sformatf(
           "rd_empty=%0b after 3 writes", rd_empty));
 
+    hold_errors  = 0;
+    empty_errors = 0;
+
     if (rd_empty === 1'b0) begin
       rd_en     = 1'b0;
       wr_en     = 1'b0;
@@ -564,15 +572,27 @@ module tb_async_fifo_fwft_reg_pow2;
         @(posedge rd_clk);
         #1ps;
 
-        check(rd_empty === 1'b0, "FWFT DATA HOLD: EMPTY", $sformatf(
-              "cycle %0d: FIFO unexpectedly became empty", hold_cycles));
+        if (rd_empty !== 1'b0) begin
+          $display("[FAIL at %0t] FWFT DATA HOLD: EMPTY at cycle %0d (rd_empty=%0b)", $time,
+                   hold_cycles, rd_empty);
+          empty_errors++;
+        end
 
-        check(rd_data === held_data, "FWFT DATA HOLD: rd_data changed without rd_en", $sformatf(
-              "cycle %0d: expected=0x%04X got=0x%04X", hold_cycles, held_data, rd_data));
+        if (rd_data !== held_data) begin
+          $display(
+              "[FAIL at %0t] FWFT DATA HOLD: rd_data changed at cycle %0d: expected=0x%04X got=0x%04X",
+              $time, hold_cycles, held_data, rd_data);
+          hold_errors++;
+        end
       end
     end
 
-    // async_reset();
+    // По одному check на каждое проверяемое свойство, а не на каждый такт
+    check(empty_errors == 0, "FWFT DATA HOLD: rd_empty stable for 20 cycles", $sformatf(
+          "%0d violations in 20 cycles", empty_errors));
+
+    check(hold_errors == 0, "FWFT DATA HOLD: rd_data held for 20 cycles", $sformatf(
+          "%0d violations in 20 cycles", hold_errors));
   endtask
 
   // =========================================================================
@@ -643,13 +663,13 @@ module tb_async_fifo_fwft_reg_pow2;
               break;
             end
             // Доп. пауза: гарантирует, что reader уже увидел EMPTY между словами
-            repeat (10) @(posedge wr_clk);
+            repeat (8) @(posedge wr_clk);
           end
 
           write_word(16'h5000 + i);
 
           // Пауза, чтобы reader успел прочитать слово и FIFO снова опустело
-          repeat (30) @(posedge wr_clk);
+          repeat (8) @(posedge wr_clk);
         end
       end
 
@@ -721,7 +741,7 @@ module tb_async_fifo_fwft_reg_pow2;
           $sformatf("rd_empty=%0b rd_cnt=%0d wr_cnt=%0d", rd_empty, rd_cnt, wr_cnt));
 
     rd_en = 1'b0;
-    async_reset();
+    // async_reset();
   endtask
 
   // 3. Граничные объемы и счетчики
