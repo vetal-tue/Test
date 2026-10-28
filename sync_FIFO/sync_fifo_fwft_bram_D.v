@@ -21,8 +21,15 @@ module sync_fifo_fwft_bram_D #(
 
   localparam DEPTH    = 1 << ADDR_W;
   localparam MEM_BITS = DEPTH * DATA_W;
+
+    // Для Xilinx/AMD Vivado:    
   localparam RAM_STYLE = (MEM_BITS >= 4096) ? "block" : "distributed";
   (* ram_style = RAM_STYLE *) reg [DATA_W-1:0] ram[0:DEPTH-1];
+
+
+  // // Для Intel/Altera Quartus:
+  // localparam RAM_STYLE = (MEM_BITS >= 4096) ? "M20K" : "MLAB";
+  // (* ramstyle = RAM_STYLE *) reg [DATA_W-1:0] ram[0:DEPTH-1];
 
   generate
     // ==================================================================
