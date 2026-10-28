@@ -4,15 +4,15 @@ module sync_fifo_fwft_bram_D #(
     parameter ALMOST_FULL_THRESH  = (1 << ADDR_W) - 1,
     parameter ALMOST_EMPTY_THRESH = 1
 ) (
-    input                    clk,
-    input                    rst,
-    input                    wr_en,
-    input       [DATA_W-1:0] wr_data,
+    input wire               clk,
+    input wire               rst,
+    input wire               wr_en,
+    input wire  [DATA_W-1:0] wr_data,
     output reg               wr_full,
     output reg               wr_almost_full,
     output reg  [  ADDR_W:0] usedw,
-    input                    rd_en,
-    output      [DATA_W-1:0] rd_data,
+    input wire               rd_en,
+    output wire [DATA_W-1:0] rd_data,
     output reg               rd_empty,
     output reg               rd_almost_empty
 );
