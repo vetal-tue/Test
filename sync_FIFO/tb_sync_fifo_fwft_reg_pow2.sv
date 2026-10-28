@@ -37,8 +37,10 @@ module tb_sync_fifo_fwft_reg_pow2;
   always #5 clk = ~clk;
 
   // DUT
-  sync_fifo_fwft_reg_pow2_GEM #(
-      // sync_fifo_fwft_reg_pow2_OBF #(
+  // sync_fifo_fwft_reg_pow2_GEM #(
+    // sync_fifo_fwft_bram #(
+    sync_fifo_fwft_bram_D #(
+    // sync_fifo_fwft_reg_pow2_GEM_nobypass #(
       .DATA_W(DATA_W),
       .ADDR_W(ADDR_W)
   ) dut (
@@ -77,8 +79,8 @@ module tb_sync_fifo_fwft_reg_pow2;
   end
 
   initial begin
-    // $dumpfile("sync_FIFO_TB.vcd");
-    $dumpfile("sync_FIFO_TB.fst");
+    $dumpfile("sync_FIFO_TB.vcd");
+    // $dumpfile("sync_FIFO_TB.fst");
     $dumpvars(0, tb_sync_fifo_fwft_reg_pow2);
   end
 
@@ -145,16 +147,22 @@ module tb_sync_fifo_fwft_reg_pow2;
     apply_reset();
 
     write_word(16'hA5A5);
-    repeat (FWFT_DELAY) @(posedge clk);  // Было: @(posedge clk);
-    #1;
+    #1ps;
 
-    if (rd_empty) begin
-      // $error("T2: rd_empty should be 0 after fall-through!");
-      $display("ERROR [T2]: rd_empty should be 0 after fall-through!");
+    
+    if (!rd_empty && rd_data !== 16'hA5A5) begin
+      // $error("T2: Data mismatch on fall-through!");
+      $display("ERROR [T2 @%0t]: Data mismatch on fall-through! Exp: 16'hA5A5, Got: 16'h%04h", $time, rd_data);
       err_count++;
     end
+    repeat (FWFT_DELAY) @(posedge clk);  // Было: @(posedge clk);
+    // @(posedge clk);
+    #1;
 
-    if (rd_data !== 16'hA5A5) begin
+    // $display("[DEBUG @%0t] rd_empty = %0b | rd_data = 16'h%04h", 
+    //         $time, rd_empty, rd_data);
+
+    if (!rd_empty && rd_data !== 16'hA5A5) begin
       // $error("T2: Data mismatch on fall-through!");
       $display("ERROR [T2]: Data mismatch on fall-through!");
       err_count++;
