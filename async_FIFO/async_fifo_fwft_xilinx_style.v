@@ -42,13 +42,20 @@ module async_fifo_fwft_xilinx_style #(
   reg [ADDR_W:0] wr_ptr, wr_ptr_gray;
   reg [ADDR_W:0] rd_ptr, rd_ptr_gray;
 
+  localparam DEPTH = 1 << ADDR_W;
+  localparam MEM_BITS = DEPTH * DATA_W;
+
   // XILINX:
   (* shreg_extract = "no", ASYNC_REG = "TRUE" *) reg [ADDR_W:0] wr_ptr_gray_s1, wr_ptr_gray_s2;
   (* shreg_extract = "no", ASYNC_REG = "TRUE" *) reg [ADDR_W:0] rd_ptr_gray_s1, rd_ptr_gray_s2;
+  localparam RAM_STYLE = (MEM_BITS >= 4096) ? "block" : "distributed";
+  (* ram_style = RAM_STYLE *) reg [DATA_W-1:0] ram[0:DEPTH-1];
 
   // ALTERA:
   // (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED" *) reg [ADDR_W:0] wr_ptr_gray_s1, wr_ptr_gray_s2;
   // (* altera_attribute = "-name SYNCHRONIZER_IDENTIFICATION FORCED" *) reg [ADDR_W:0] rd_ptr_gray_s1, rd_ptr_gray_s2;
+  // localparam RAM_STYLE = (MEM_BITS >= 4096) ? "M20K" : "MLAB";
+  // (* ramstyle = RAM_STYLE *) reg [DATA_W-1:0] ram[0:DEPTH-1];
 
   wire [ADDR_W:0] wr_ptr_sync = gray2bin(wr_ptr_gray_s2);
   wire [ADDR_W:0] rd_ptr_sync = gray2bin(rd_ptr_gray_s2);
@@ -85,16 +92,6 @@ module async_fifo_fwft_xilinx_style #(
       rd_ptr_gray_s2 <= rd_ptr_gray_s1;
     end
   end
-
-  // =====================================================
-  // RAM
-  // =====================================================
-
-  localparam DEPTH = 1 << ADDR_W;
-  localparam MEM_BITS = DEPTH * DATA_W;
-  localparam RAM_STYLE = (MEM_BITS >= 4096) ? "block" : "distributed";
-  // (* ram_style = ramstyle *) reg [DATA_W-1:0] ram[0:(1<<ADDR_W)-1];
-  (* ram_style = RAM_STYLE *) reg [DATA_W-1:0] ram[0:DEPTH-1];
 
   always @(posedge wr_clk) if (wr_en && !wr_full) ram[wr_ptr[ADDR_W-1:0]] <= wr_data;
 
