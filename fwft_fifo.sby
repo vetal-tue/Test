@@ -1,0 +1,18 @@
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+cover: mode cover
+depth 20
+
+[engines]
+smtbmc boolector
+
+[script]
+read -formal fwft_fifo.v
+prep -top fwft_fifo
+
+[files]
+fwft_fifo.v

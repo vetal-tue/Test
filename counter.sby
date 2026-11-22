@@ -1,0 +1,18 @@
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+cover: mode cover
+depth 25
+
+[engines]
+smtbmc z3
+
+[script]
+read -formal counter.v
+prep -top counter
+
+[files]
+counter.v
