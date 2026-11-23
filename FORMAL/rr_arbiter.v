@@ -78,11 +78,17 @@ module rr_arbiter #(
   // =========================================================================
   // Выбираем ОДИН произвольный канал (от 0 до N-1) через anyconst.
   // Решатель сам проверит все 8 каналов и попытается "заморить голодом" любой из них.
-  (* anyconst *) wire [$clog2(N)-1:0] f_watch_ch;
+  // (* anyconst *) wire [$clog2(N)-1:0] f_watch_ch;
+localparam IDX_W = (N <= 1) ? 1 : $clog2(N);
 
-  always @(*) begin
-    assume (f_watch_ch < N);
-  end
+(* anyconst *) wire [IDX_W-1:0] f_watch_ch;    
+
+  // always @(*) begin
+  //   assume (f_watch_ch < N);
+  // end
+always @(posedge clk) begin
+    assume(f_watch_ch < N);
+end
 
   reg [3:0] f_wait_cnt = 0;
 
@@ -112,13 +118,34 @@ module rr_arbiter #(
   // =========================================================================
   always @(posedge clk) begin
     if (f_past_valid && !rst) begin
-      // Убеждаемся, что при одновременном запросе всех 8 каналов каждый может получить грант
-      cover ((req == 8'hFF) && gnt[0]);
-      cover ((req == 8'hFF) && gnt[7]);
+  //     // Убеждаемся, что при одновременном запросе всех 8 каналов каждый может получить грант
+  //     cover ((req == 8'hFF) && gnt[0]);
+  //     cover ((req == 8'hFF) && gnt[7]);
       // Убеждаемся, что при снятии всех запросов выход корректно обнуляется
-      cover ((req == 8'h00) && (gnt == 8'h00) && ($past(gnt) != 8'h00));
+        cover ((req ==  {N{1'b0}}) && (gnt ==  {N{1'b0}}) && ($past(gnt) !=  {N{1'b0}}));
     end
   end
+
+genvar i;
+
+generate
+    for (i = 0; i < N; i = i + 1) begin : GEN_COVER
+
+        always @(posedge clk) begin
+            if (f_past_valid && !rst) begin
+
+                // Все каналы запрашивали обслуживание,
+                // выбранный канал получил грант.
+                cover(
+                    ($past(req) == {N{1'b1}}) &&
+                    gnt[i]
+                );
+
+            end
+        end
+
+    end
+endgenerate
 `endif
 
 endmodule
