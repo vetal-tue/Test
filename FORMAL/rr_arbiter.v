@@ -150,7 +150,7 @@ generate
     for (i = 0; i < N; i = i + 1) begin : GEN_COVER
 
         always @(posedge clk) begin
-            if (f_past_valid && !rst) begin
+            if (f_past_valid && !rst && !$past(rst)) begin
 
                 // Все каналы запрашивали обслуживание,
                 // выбранный канал получил грант.
