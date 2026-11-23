@@ -164,6 +164,21 @@ generate
 
     end
 endgenerate
+
+reg [N-1:0] f_seen_gnt;
+always @(posedge clk) begin
+    if (rst) begin
+        f_seen_gnt <= 0;
+    end
+    else if (f_past_valid && !$past(rst)) begin
+        if ($past(req) == {N{1'b1}})
+            f_seen_gnt <= f_seen_gnt | gnt;
+        else
+            f_seen_gnt <= 0;
+        cover(&f_seen_gnt);
+    end
+end
+
 `endif
 
 endmodule
