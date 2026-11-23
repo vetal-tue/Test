@@ -73,46 +73,64 @@ module rr_arbiter #(
     end
   end
 
-  // =========================================================================
-  // 3. ЧЕСТНОСТЬ / ОТСУТСТВИЕ ГОЛОДАНИЯ (Fairness / Bounded Starvation)
-  // =========================================================================
-  // Выбираем ОДИН произвольный канал (от 0 до N-1) через anyconst.
-  // Решатель сам проверит все 8 каналов и попытается "заморить голодом" любой из них.
-  // (* anyconst *) wire [$clog2(N)-1:0] f_watch_ch;
+// =========================================================================
+// 3. ЧЕСТНОСТЬ / ОТСУТСТВИЕ ГОЛОДАНИЯ (Fairness)
+// =========================================================================
+
+// Ширина счетчика ожидания.
+// Необходимо представлять значения от 0 до N включительно.
+localparam WAIT_W = (N <= 1) ? 1 : $clog2(N + 1);
+
+// Выбираем произвольный канал для проверки.
 localparam IDX_W = (N <= 1) ? 1 : $clog2(N);
 
-(* anyconst *) wire [IDX_W-1:0] f_watch_ch;    
+(* anyconst *) wire [IDX_W-1:0] f_watch_ch;
 
-  // always @(*) begin
-  //   assume (f_watch_ch < N);
-  // end
 always @(posedge clk) begin
     assume(f_watch_ch < N);
 end
 
-  reg [3:0] f_wait_cnt = 0;
+reg [WAIT_W-1:0] f_wait_cnt = 0;
 
-  always @(posedge clk) begin
-    if (rst) begin
-      f_wait_cnt <= 0;
-    end else begin
-      // Если выбранный канал держит запрос, но грант выдали другому (или никому)
-      if (req[f_watch_ch] && !gnt[f_watch_ch]) begin
-        if (f_wait_cnt < 4'hF) f_wait_cnt <= f_wait_cnt + 1'b1;
-      end else begin
+always @(posedge clk) begin
+
+    if (!f_past_valid || rst) begin
         f_wait_cnt <= 0;
-      end
     end
-  end
-
-  // При Round-Robin из N каналов любой канал обязан получить грант
-  // не позже чем через N тактов ожидания (учитывая 1 такт регистрации выхода)
-  always @(posedge clk) begin
-    if (!rst) begin
-      assert (f_wait_cnt <= N);
+    else if ($past(rst)) begin
+        // После сброса начинаем отсчет заново.
+        f_wait_cnt <= 0;
     end
-  end
+    else begin
 
+        // Сравниваем запрос предыдущего такта
+        // с текущим зарегистрированным грантом.
+        if ($past(req[f_watch_ch]) &&
+            !gnt[f_watch_ch]) begin
+
+            if (f_wait_cnt < N)
+                f_wait_cnt <= f_wait_cnt + 1'b1;
+
+        end
+        else begin
+            // Запрос отсутствует или канал получил грант.
+            f_wait_cnt <= 0;
+        end
+
+    end
+end
+
+always @(posedge clk) begin
+
+    if (f_past_valid && !rst && !$past(rst)) begin
+
+        // Не должно быть N последовательных пропущенных
+        // возможностей получить грант.
+        assert(f_wait_cnt < N);
+
+    end
+
+end
   // =========================================================================
   // 4. ПРОВЕРКА ДОСТИЖИМОСТИ (COVER)
   // =========================================================================
