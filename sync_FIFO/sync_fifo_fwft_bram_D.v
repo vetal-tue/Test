@@ -31,6 +31,7 @@ module sync_fifo_fwft_bram_D #(
   // localparam RAM_STYLE = (MEM_BITS >= 4096) ? "M20K" : "MLAB";
   // (* ramstyle = RAM_STYLE *) reg [DATA_W-1:0] ram[0:DEPTH-1];
 
+
   generate
     // ==================================================================
     // ENABLE_BYPASS = 1 : ОДНОСТУПЕНЧАТЫЙ FWFT с bypass-регистром
@@ -46,7 +47,9 @@ module sync_fifo_fwft_bram_D #(
       wire              do_push = wr_en && (!wr_full || do_pop);
 
       // prefetch: при pop читаем следующий элемент
-      wire [ADDR_W-1:0] rd_addr = do_pop ? (rd_ptr + 1'b1) : rd_ptr;
+      wire [ADDR_W-1:0] next_rd_addr = (rd_ptr == DEPTH-1) ? 0 : rd_ptr + 1'b1;
+      wire [ADDR_W-1:0] rd_addr = do_pop ? next_rd_addr : rd_ptr;
+      // wire [ADDR_W-1:0] rd_addr = do_pop ? (rd_ptr + 1'b1) : rd_ptr;
 
       reg  [  ADDR_W:0] usedw_next;
       always @(*) begin
@@ -67,7 +70,8 @@ module sync_fifo_fwft_bram_D #(
         else if (do_push && (usedw == 0)) begin
           first_word       <= wr_data;
           first_word_valid <= 1'b1;
-        end else if (do_push && do_pop && first_word_valid && (usedw == 1)) begin
+        // end else if (do_push && do_pop && first_word_valid && (usedw == 1)) begin
+        end else if (do_push && do_pop && (usedw == 1)) begin
           first_word       <= wr_data;
           first_word_valid <= 1'b1;
         end else if (do_pop && first_word_valid) begin
@@ -85,8 +89,10 @@ module sync_fifo_fwft_bram_D #(
           rd_almost_empty <= 1'b1;
           usedw           <= {(ADDR_W + 1) {1'b0}};
         end else begin
-          if (do_pop) rd_ptr <= rd_ptr + 1'b1;
-          if (do_push) wr_ptr <= wr_ptr + 1'b1;
+          // if (do_pop) rd_ptr <= rd_ptr + 1'b1;
+          // if (do_push) wr_ptr <= wr_ptr + 1'b1;
+          if (do_pop)  rd_ptr <= next_rd_addr; //(rd_ptr == DEPTH-1) ? 0 : rd_ptr + 1'b1;
+          if (do_push) wr_ptr <= (wr_ptr == DEPTH-1) ? 0 : wr_ptr + 1'b1;
           usedw           <= usedw_next;
           rd_empty        <= (usedw_next == 0);
           wr_full         <= (usedw_next == DEPTH);
@@ -147,11 +153,13 @@ module sync_fifo_fwft_bram_D #(
         end else begin
           if (do_ram_write) begin
             ram[wr_ptr] <= wr_data;
-            wr_ptr      <= wr_ptr + 1'b1;
+            // wr_ptr      <= wr_ptr + 1'b1;
+            wr_ptr      <= (wr_ptr == DEPTH-1) ? 0 : wr_ptr + 1'b1;
           end
           if (ram_re) begin
             rd_data_reg <= ram[rd_ptr];
-            rd_ptr      <= rd_ptr + 1'b1;
+            // rd_ptr      <= rd_ptr + 1'b1;
+            rd_ptr      <= (rd_ptr == DEPTH-1) ? 0 : rd_ptr + 1'b1;
           end
           ram_count       <= ram_count_next;
           rd_empty        <= rd_empty_next;
