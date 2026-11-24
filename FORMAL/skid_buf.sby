@@ -1,0 +1,27 @@
+[tasks]
+prove
+cover
+
+[options]
+
+prove: mode prove
+prove: multiclock on
+
+cover: mode cover
+cover: multiclock on
+cover: depth 30
+
+[engines]
+
+prove: abc pdr
+cover: smtbmc boolector
+
+[script]
+
+read -formal -sv valid_ready_skid_buf.v skid_buf_formal.sv
+prep -top skid_buf_formal
+
+[files]
+
+valid_ready_skid_buf.v
+skid_buf_formal.sv
